@@ -24,10 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install the Rust toolchain of rust-toolchain.toml
+      # Pinned to the Rust the tests are run with locally (Owner, 2026-11-12):
+      # a newer stable brings new clippy lints that fail -D warnings; moving
+      # to a newer Rust is its own change, made here and locally together.
+      - name: Install Rust 1.96.0
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.96.0
           components: rustfmt, clippy
 
       - name: Install libclang (Ubuntu)
