@@ -1,0 +1,1143 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "phase1-entry-contract-v1",
+  "decision": "D3",
+  "status": "COMPLETE_PENDING_INDEPENDENT_REVIEW",
+  "contract_owner": "Curt",
+  "approval": {
+    "policy_approved_at": "2026-07-15",
+    "artifact_approved_at": null,
+    "independent_reviewer": null,
+    "interpretation": "Artifact bytes are complete but are not independently approved and do not authorize Phase 1."
+  },
+  "contract": {
+    "path": "openapi/control-api-v1.yaml",
+    "openapi": "3.1.0",
+    "version": "1.0.0",
+    "sha256": "sha256:272cec8bc037397eac546489c00bccec403c4d216a59a84e0679b8301a152c10",
+    "phase_1_operation_ids": [
+      "healthLive",
+      "healthReady",
+      "getStatus",
+      "getVersion",
+      "createClientToken",
+      "listClientTokens",
+      "revokeClientToken",
+      "registerProject",
+      "getProject",
+      "resolveWorkspace",
+      "createSession",
+      "listSessions",
+      "endSession",
+      "ingestEvent",
+      "listEvents",
+      "ingestEventBatch",
+      "streamEvents",
+      "getEvent",
+      "createTask",
+      "listTasks",
+      "getNextTask",
+      "transitionTask",
+      "addTaskDependency"
+    ]
+  },
+  "logical_references": {
+    "access_rules": {
+      "path": "docs/implementation/access-rule-registry-v1.yaml",
+      "sha256": "sha256:4199f4a8cf9f6b7956da559f037c624ea8a668c670eaf568faaec0075bba6b9b",
+      "collection_pointer": "/phase_1_operations",
+      "possible_problem_types_field": "possible_problem_types",
+      "default_for_unmapped_operation_field": "default_for_unmapped_operation"
+    },
+    "problem_crosswalk": {
+      "path": "docs/implementation/phase-1-problem-crosswalk-v1.yaml",
+      "sha256": "sha256:840a841f9d99a446657c204005361fae95a733d90f0d5174b4b5835ee57ddf72",
+      "collection_pointer": "/operations",
+      "fixture_namespace": "phase1-entry-contract-v1"
+    }
+  },
+  "validator": {
+    "id": "sourcemeta-jsonschema",
+    "version": "16.1.0",
+    "binary_sha256": "sha256:ab81eb67f751762b6a7c9a44c17a742b8638b2b21b4971fc57d146ca50718752",
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "format_assertion": true,
+    "external_reference_resolution": "repository schemas directory; network disabled"
+  },
+  "coverage": {
+    "phase_1_operations": 23,
+    "request_body_operations": 10,
+    "request_body_variants_per_operation": 5,
+    "request_body_cases": 50,
+    "body_absent_operations": 13,
+    "primary_success_cases": 23,
+    "problem_cases": 125,
+    "problem_status_code_pair_cases": 176,
+    "problem_status_code_valid_cases": 22,
+    "problem_status_code_invalid_cross_cases": 154,
+    "www_authenticate_operations": 21,
+    "www_authenticate_header_cases": 42,
+    "access_cases": 46,
+    "behavior_cases": 8,
+    "total_cases": 483
+  },
+  "fixtures": {
+    "path": "tests/phase0/fixtures/phase1-entry-contract-v1/fixtures.json",
+    "case_count": 483,
+    "sha256": "sha256:957307b6f10504951ee3737f0de1ad34647b1a2a225bde2b6704c9329043f6db",
+    "raw_payload_digest_algorithm": "SHA-256 over the exact UTF-8 bytes of payload_raw"
+  },
+  "operations": [
+    {
+      "operation_id": "healthLive",
+      "method": "GET",
+      "path": "/health/live",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Health/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "Anonymous",
+        "scopes": [
+
+        ]
+      },
+      "access_pointer": "#/paths/~1health~1live/get/x-continuity-access",
+      "problem_codes": {
+      },
+      "problem_codes_pointer": "#/paths/~1health~1live/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "healthReady",
+      "method": "GET",
+      "path": "/health/ready",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Health/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "Anonymous",
+        "scopes": [
+
+        ]
+      },
+      "access_pointer": "#/paths/~1health~1ready/get/x-continuity-access",
+      "problem_codes": {
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1health~1ready/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "getStatus",
+      "method": "GET",
+      "path": "/v1/status",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1status/get/responses/200/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1status/get/x-continuity-access",
+      "problem_codes": {
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1status/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "getVersion",
+      "method": "GET",
+      "path": "/v1/version",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1version/get/responses/200/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "Authenticated",
+        "scopes": [
+
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1version/get/x-continuity-access",
+      "problem_codes": {
+        "401": [
+          "authentication_required"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1version/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "createClientToken",
+      "method": "POST",
+      "path": "/v1/auth/tokens",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1auth~1tokens/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "201",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/TokenCreated/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1auth~1tokens/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request",
+          "unsupported_scope"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "409": [
+          "idempotency_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1auth~1tokens/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "listClientTokens",
+      "method": "GET",
+      "path": "/v1/auth/tokens",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/TokenSummaryPage/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1auth~1tokens/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1auth~1tokens/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "revokeClientToken",
+      "method": "POST",
+      "path": "/v1/auth/tokens/{token_id}/revoke",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/TokenSummary/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1auth~1tokens~1{token_id}~1revoke/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found"
+        ],
+        "409": [
+          "idempotency_conflict",
+          "last_control_token"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1auth~1tokens~1{token_id}~1revoke/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "registerProject",
+      "method": "POST",
+      "path": "/v1/projects/register",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/components/requestBodies/RegisterProject/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "201",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Project/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1projects~1register/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "409": [
+          "idempotency_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1projects~1register/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "getProject",
+      "method": "GET",
+      "path": "/v1/projects/{project_id}",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Project/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1projects~1{project_id}/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1projects~1{project_id}/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "resolveWorkspace",
+      "method": "POST",
+      "path": "/v1/workspaces/resolve",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/components/requestBodies/ResolveWorkspace/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Workspace/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1workspaces~1resolve/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found",
+          "workspace_not_resolved"
+        ],
+        "409": [
+          "project_workspace_mismatch"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1workspaces~1resolve/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "createSession",
+      "method": "POST",
+      "path": "/v1/sessions",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1sessions/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "201",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Session/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1sessions/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "workspace_not_resolved"
+        ],
+        "409": [
+          "idempotency_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1sessions/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "listSessions",
+      "method": "GET",
+      "path": "/v1/sessions",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/SessionPage/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1sessions/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "workspace_not_resolved"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1sessions/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "endSession",
+      "method": "POST",
+      "path": "/v1/sessions/{session_id}/end",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/components/requestBodies/ExpectedRevisionCommand/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Session/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1sessions~1{session_id}~1end/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found"
+        ],
+        "409": [
+          "idempotency_conflict",
+          "invalid_transition",
+          "revision_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1sessions~1{session_id}~1end/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "ingestEvent",
+      "method": "POST",
+      "path": "/v1/events",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1events/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "202",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Accepted/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1events/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found",
+          "workspace_not_resolved"
+        ],
+        "409": [
+          "idempotency_conflict",
+          "project_workspace_mismatch"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1events/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "listEvents",
+      "method": "GET",
+      "path": "/v1/events",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/EventPage/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1events/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1events/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "ingestEventBatch",
+      "method": "POST",
+      "path": "/v1/events/batch",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1events~1batch/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "202",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Accepted/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1events~1batch/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found",
+          "workspace_not_resolved"
+        ],
+        "409": [
+          "idempotency_conflict",
+          "project_workspace_mismatch"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1events~1batch/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "streamEvents",
+      "method": "GET",
+      "path": "/v1/events/stream",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "text/event-stream",
+        "schema_pointer": "#/paths/~1v1~1events~1stream/get/responses/200/content/text~1event-stream/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1events~1stream/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1events~1stream/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "getEvent",
+      "method": "GET",
+      "path": "/v1/events/{event_id}",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1events~1{event_id}/get/responses/200/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1events~1{event_id}/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1events~1{event_id}/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "createTask",
+      "method": "POST",
+      "path": "/v1/tasks",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1tasks/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "201",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Task/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1tasks/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found"
+        ],
+        "409": [
+          "idempotency_conflict",
+          "project_workspace_mismatch"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1tasks/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "listTasks",
+      "method": "GET",
+      "path": "/v1/tasks",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/TaskPage/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1tasks/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "project_not_found"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1tasks/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "getNextTask",
+      "method": "GET",
+      "path": "/v1/tasks/next",
+      "request": {
+        "direction": "request",
+        "body": "absent",
+        "status": null,
+        "media_type": null,
+        "schema_pointer": null
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Task/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1tasks~1next/get/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found",
+          "workspace_not_resolved"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1tasks~1next/get/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "transitionTask",
+      "method": "POST",
+      "path": "/v1/tasks/{task_id}/transition",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1tasks~1{task_id}~1transition/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Task/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1tasks~1{task_id}~1transition/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found"
+        ],
+        "409": [
+          "evidence_stale",
+          "idempotency_conflict",
+          "invalid_transition",
+          "revision_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1tasks~1{task_id}~1transition/post/x-continuity-problem-codes"
+    },
+    {
+      "operation_id": "addTaskDependency",
+      "method": "POST",
+      "path": "/v1/tasks/{task_id}/dependencies",
+      "request": {
+        "direction": "request",
+        "body": "required",
+        "status": null,
+        "media_type": "application/json",
+        "schema_pointer": "#/paths/~1v1~1tasks~1{task_id}~1dependencies/post/requestBody/content/application~1json/schema"
+      },
+      "primary_success": {
+        "direction": "response",
+        "status": "200",
+        "media_type": "application/json",
+        "schema_pointer": "#/components/responses/Task/content/application~1json/schema"
+      },
+      "access": {
+        "kind": "AnyOf",
+        "scopes": [
+          "control"
+        ]
+      },
+      "access_pointer": "#/paths/~1v1~1tasks~1{task_id}~1dependencies/post/x-continuity-access",
+      "problem_codes": {
+        "400": [
+          "invalid_request"
+        ],
+        "401": [
+          "authentication_required"
+        ],
+        "403": [
+          "policy_denied"
+        ],
+        "404": [
+          "resource_not_found"
+        ],
+        "409": [
+          "dependency_cycle",
+          "idempotency_conflict",
+          "revision_conflict"
+        ],
+        "503": [
+          "service_not_ready"
+        ]
+      },
+      "problem_codes_pointer": "#/paths/~1v1~1tasks~1{task_id}~1dependencies/post/x-continuity-problem-codes"
+    }
+  ],
+  "problem_status_code_registry": {
+    "schema_pointer": "#/components/schemas/Problem/oneOf",
+    "statuses": {
+      "400": [
+        "invalid_request",
+        "unsupported_scope"
+      ],
+      "401": [
+        "authentication_required"
+      ],
+      "403": [
+        "policy_denied"
+      ],
+      "404": [
+        "project_not_found",
+        "workspace_not_resolved",
+        "resource_not_found"
+      ],
+      "409": [
+        "project_workspace_mismatch",
+        "revision_conflict",
+        "invalid_transition",
+        "dependency_cycle",
+        "evidence_stale",
+        "capsule_stale",
+        "capsule_tampered",
+        "idempotency_mismatch",
+        "idempotency_conflict",
+        "last_control_token"
+      ],
+      "500": [
+        "store_corrupt"
+      ],
+      "503": [
+        "context_unavailable",
+        "service_not_ready",
+        "provider_unavailable"
+      ],
+      "504": [
+        "command_timeout"
+      ]
+    },
+    "legal_pair_count": 22,
+    "invalid_cross_pair_count": 154,
+    "matrix_fixture_count": 176
+  },
+  "www_authenticate": {
+    "response_ref": "#/components/responses/UnauthorizedProblem",
+    "header_ref": "#/components/headers/WwwAuthenticate",
+    "schema_pointer": "#/components/headers/WwwAuthenticate/schema",
+    "required": true,
+    "value": "Bearer",
+    "operation_count": 21,
+    "positive_fixture_count": 21,
+    "negative_fixture_count": 21
+  },
+  "manifest_digest_algorithm": {
+    "id": "sha256-canonical-json-minus-manifest-digest-v1",
+    "hash": "SHA-256",
+    "encoding": "UTF-8",
+    "canonicalization": "recursive-lexicographic-object-keys;array-order-preserved;JSON.generate",
+    "scope": "top-level manifest_digest omitted"
+  },
+  "manifest_digest": "sha256:2bfd0ee56ddac14699a38f37616854700776a9a5ed645c5483d6ee1b4800b800"
+}

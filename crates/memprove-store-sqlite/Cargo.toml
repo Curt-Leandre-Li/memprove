@@ -1,0 +1,27 @@
+[package]
+name = "memprove-store-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+cap-std.workspace = true
+chrono.workspace = true
+memprove-domain = { path = "../memprove-domain" }
+memprove-engine = { path = "../memprove-engine" }
+memprove-repo = { path = "../memprove-repo" }
+rusqlite.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlite-plugin.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

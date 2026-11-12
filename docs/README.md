@@ -1,0 +1,12 @@
+# Documentation
+
+| file | what it is for |
+|---|---|
+| [`guide.md`](guide.md) | the agent's manual: install, enable a repository, one Session start to end, the Context Pack, the hook, the MCP server, taking over, correcting, exit codes |
+| [`architecture.md`](architecture.md) | one page on the daemon, the ledger, Evidence and verdicts, the Pack, the hook and the MCP server |
+| [`takeover-eval.md`](takeover-eval.md) | the takeover evaluation: six scenarios, a real client, a deterministic scorer, the pass line |
+| `../openapi/control-api-v1.yaml` | the control API the daemon serves over its Unix socket |
+| `../schemas/` | the JSON schemas of the Task Capsule and the other documents |
+
+`memprove --help` and `memprove <command> --help` print the usage of
+every command without a daemon; the guide says the same as the help does.

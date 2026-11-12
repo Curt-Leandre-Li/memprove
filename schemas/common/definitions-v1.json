@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://continuity.local/schemas/common/definitions-v1.json",
+  "title": "Continuity v1 Common Definitions",
+  "$defs": {
+    "uuidv7": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "rfc3339Utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "repoUri": {
+      "type": "string",
+      "pattern": "^repo://(?:\\.|[^/].*)$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "lifecycle": {
+      "enum": ["active", "superseded", "archived"]
+    },
+    "support": {
+      "enum": ["unverified", "supported", "verified", "refuted", "unknown"]
+    },
+    "freshness": {
+      "enum": ["current", "stale", "unknown"]
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["head_oid", "index_digest", "worktree_manifest_digest"],
+      "properties": {
+        "head_oid": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "index_digest": { "$ref": "#/$defs/sha256" },
+        "worktree_manifest_digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

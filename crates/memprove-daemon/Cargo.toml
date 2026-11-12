@@ -1,0 +1,30 @@
+[package]
+name = "memprove-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "memproved"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+memprove-domain = { path = "../memprove-domain" }
+memprove-engine = { path = "../memprove-engine" }
+memprove-protocol = { path = "../memprove-protocol" }
+memprove-repo = { path = "../memprove-repo" }
+memprove-store-sqlite = { path = "../memprove-store-sqlite" }
+getrandom.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

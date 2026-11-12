@@ -1,0 +1,18 @@
+[package]
+name = "memprove-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "memprove-proxy"
+path = "src/main.rs"
+
+[dependencies]
+memprove-protocol = { path = "../memprove-protocol" }
+
+[lints]
+workspace = true

@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/memprove-protocol",
+    "crates/memprove-domain",
+    "crates/memprove-engine",
+    "crates/memprove-store-sqlite",
+    "crates/memprove-repo",
+    "crates/memprove-daemon",
+    "crates/memprove-cli",
+    "crates/memprove-proxy",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+repository = "https://github.com/Curt-Leandre-Li/memprove"
+publish = false
+
+[workspace.dependencies]
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
+cap-std = "=4.0.2"
+getrandom = { version = "=0.4.3", default-features = false }
+rusqlite = { version = "=0.34.0", default-features = false, features = ["bundled"] }
+uuid = { version = "=1.24.0", default-features = false, features = ["std", "v7", "serde"] }
+sha2 = { version = "=0.11.0", default-features = false }
+chrono = { version = "=0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.151" }
+serde_json_canonicalizer = "=0.3.2"
+sqlite-plugin = "=0.11.0"
+thiserror = { version = "=2.0.19" }
+tempfile = { version = "=3.27.0" }
+tokio = { version = "=1.52.3", default-features = false, features = ["rt", "net", "signal", "macros"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

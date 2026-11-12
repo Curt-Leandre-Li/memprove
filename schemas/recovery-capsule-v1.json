@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://continuity.local/schemas/recovery-capsule-v1.json",
+  "title": "Continuity Recovery Capsule v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "workspace_id", "checkpoint_id",
+    "checkpoint_event_seq", "snapshot", "objective", "active_task_ids",
+    "completed_task_ids", "blocked_task_ids", "accepted_decision_revisions",
+    "verified_fact_revisions", "open_conflict_ids", "recent_test_evidence",
+    "next_actions", "required_checks", "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "project_id": { "$ref": "common/definitions-v1.json#/$defs/uuidv7" },
+    "workspace_id": { "$ref": "common/definitions-v1.json#/$defs/uuidv7" },
+    "checkpoint_id": { "$ref": "common/definitions-v1.json#/$defs/uuidv7" },
+    "checkpoint_event_seq": { "type": "integer", "minimum": 0 },
+    "snapshot": { "$ref": "common/definitions-v1.json#/$defs/snapshot" },
+    "objective": { "type": "string", "minLength": 1 },
+    "active_task_ids": { "$ref": "#/$defs/sortedUuidArray" },
+    "completed_task_ids": { "$ref": "#/$defs/sortedUuidArray" },
+    "blocked_task_ids": { "$ref": "#/$defs/sortedUuidArray" },
+    "accepted_decision_revisions": { "$ref": "#/$defs/sortedUuidArray" },
+    "verified_fact_revisions": { "$ref": "#/$defs/sortedUuidArray" },
+    "open_conflict_ids": { "$ref": "#/$defs/sortedUuidArray" },
+    "recent_test_evidence": { "$ref": "#/$defs/sortedUuidArray" },
+    "next_actions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "required_checks": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "manifest_digest": { "$ref": "common/definitions-v1.json#/$defs/sha256" }
+  },
+  "$defs": {
+    "sortedUuidArray": {
+      "type": "array",
+      "items": { "$ref": "common/definitions-v1.json#/$defs/uuidv7" },
+      "uniqueItems": true,
+      "$comment": "Producer MUST sort values by UUID raw bytes ascending before canonicalization."
+    }
+  }
+}

@@ -1,0 +1,3164 @@
+openapi: 3.1.0
+info:
+  title: memprove Local Control API
+  version: 1.0.0
+  description: >-
+    Local, authenticated control-plane contract. Unix sockets are the default
+    transport. TCP deployments MUST bind to 127.0.0.1 and require a scoped
+    bearer token.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: http://continuity.local
+    description: Logical base URL used over a local Unix socket
+security:
+  - bearerAuth: []
+x-memprove-json-decoding:
+  duplicate_member_policy: reject_before_typed_dto
+  failure: { status: 400, problem_code: invalid_request }
+x-memprove-request-body-limit:
+  description: >-
+    ADR 0012. A request body larger than max_bytes is not read and fails
+    like any unreadable body. Authentication and authorization are checked
+    first, so an unauthenticated oversized request still gets 401.
+  max_bytes: 2097152
+  failure: { status: 400, problem_code: invalid_request }
+x-memprove-problem-detail:
+  description: >-
+    P3-A. Every 400 Problem (invalid_request, unsupported_scope) carries a
+    detail of 1 to 512 characters that names the field or parameter and the
+    rule it violates, for example "$.root must be an absolute path without
+    NUL" or "query parameter limit must be an integer from 1 through 500". A
+    detail is built from fixed rule text and schema field names. It never
+    repeats a token, an Idempotency-Key value, or text from the request
+    body; a member or parameter name the schema does not define is repeated
+    only when it is at most 32 characters of a-z, 0-9, and _. A 401 or 403
+    Problem carries no detail. The Rust response validator keeps accepting a
+    400 without a detail, because the frozen Phase 0 fixtures hold some;
+    memproved emits only the strict form and checks every Problem it sends.
+  status: 400
+  required_member: detail
+  max_chars: 512
+x-memprove-unbound-state:
+  description: >-
+    P4-H1 (review of the first P4-H1 commit). A Project's state database
+    whose binding (the state_metadata row naming the Project and its
+    repository) or migration record (schema_migrations) is missing, does not
+    decode, or differs from what this memproved expects is not read as the
+    Project's ledger. Every operation listed here (the reads, and
+    createTask and resolveWorkspace, which read the root Workspace first)
+    answers 409 capsule_tampered, retryable false, with a fixed detail that
+    says so; no retry cures it, so it is not 503 service_not_ready. A
+    lookup by identity across Projects (getEvent, getEvidence,
+    getCheckpoint, the Task of getTaskCapsule and getRecoveryPreview, the
+    Workspace of listSessions) passes over such a Project and answers 409
+    only when no other Project holds the record. The other write operations
+    keep 503 service_not_ready. T21 (V1-S-1): a migration record behind its
+    schema is such a record: when rows at its end, or the whole table, are
+    missing while the schema already shows those migrations applied, no
+    migration is applied again and nothing is written. T21 (V1-R-2): so is
+    the state database of an ACTIVE Project that is missing (its file or
+    its Project directory), of 0 bytes, or without any object. Only the
+    provisioning of a Project (registerProject while the Project is not yet
+    ACTIVE) creates a state database; no other operation creates or writes
+    one, so such a database is not replaced by a new, empty ledger, and
+    registerProject repeated for that Project answers 503
+    service_not_ready. A lookup by identity for a write (the Session of
+    endSession, the Workspace of createSession, captureEvidence, and
+    createCheckpoint, the Task of transitionTask and proposeDecision)
+    passes over such a Project too and answers 503 only when no other
+    Project holds the record. U1 B5 (T21 V1-N-3): so is a Project whose
+    registry record (the projects row) does not decode, such as a revision
+    below 1 or text that is not UTF-8: the operations listed here answer
+    409 capsule_tampered with the same fixed detail, which names that
+    case, a lookup across Projects passes over it, and the other write
+    operations keep 503 service_not_ready. Before, getProject of a record
+    with revision 0 answered 500 without a body and the other reads of the
+    Project 200; a created_at that is not UTF-8 gave 503 on every read.
+  problem: { status: 409, problem_code: capsule_tampered }
+  operations:
+    - getProject
+    - resolveWorkspace
+    - listSessions
+    - listTasks
+    - createTask
+    - listEvents
+    - getEvent
+    - getEvidence
+    - getCheckpoint
+    - getRecoveryPreview
+    - getTaskCapsule
+    - verifyLedger
+x-memprove-auth-maintenance:
+  bootstrap: offline_only
+  recover_revoke_all: offline_only
+  online_routes: []
+  protected_v1_nonterminal_result:
+    status: 503
+    problem_code: service_not_ready
+    check_order: before_authentication_and_authorization
+tags:
+  - name: health
+  - name: auth
+  - name: projects
+  - name: workspaces
+  - name: sessions
+  - name: events
+  - name: memory
+  - name: decisions
+  - name: tasks
+  - name: evidence
+  - name: verification
+  - name: conflicts
+  - name: checkpoints
+  - name: recovery
+  - name: contexts
+paths:
+  /health/live:
+    get:
+      operationId: healthLive
+      tags: [health]
+      security: []
+      x-memprove-access: { kind: Anonymous, scopes: [] }
+      x-memprove-problem-codes: {}
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+  /health/ready:
+    get:
+      operationId: healthReady
+      tags: [health]
+      security: []
+      x-memprove-access: { kind: Anonymous, scopes: [] }
+      x-memprove-problem-codes:
+        "503": [service_not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/status:
+    get:
+      operationId: getStatus
+      tags: [health]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "503": [service_not_ready]
+      responses:
+        "200":
+          description: Runtime status without secrets or absolute paths
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/version:
+    get:
+      operationId: getVersion
+      tags: [health]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: Authenticated, scopes: [] }
+      x-memprove-problem-codes:
+        "401": [authentication_required]
+        "503": [service_not_ready]
+      responses:
+        "200":
+          description: Version and supported contract capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/auth/tokens:
+    post:
+      operationId: createClientToken
+      tags: [auth]
+      description: >-
+        Creates one independently scoped client token. Duplicate JSON members
+        are rejected before typed DTO decoding. A first successful request
+        returns the secret exactly once. A same-key/same-digest replay returns
+        200 with the original non-sensitive token business result and the same
+        token_id, but never discloses the secret again. Token, idempotency
+        record, and audit commit in one BEGIN IMMEDIATE transaction.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request, unsupported_scope]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "409": [idempotency_conflict]
+        "503": [service_not_ready]
+      x-memprove-idempotency:
+        key: required
+        same_key_same_digest: return_same_token_summary_without_secret
+        same_key_different_digest: idempotency_conflict
+        transaction_mode: BEGIN_IMMEDIATE
+        atomic_records: [token, idempotency_record, audit]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateClientTokenRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/TokenSummary" }
+        "201": { $ref: "#/components/responses/TokenCreated" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listClientTokens
+      tags: [auth]
+      description: >-
+        Lists only active and revoked public token metadata. Secret material,
+        verifier hashes, pending tokens, and discarded tokens are never returned.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "503": [service_not_ready]
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { $ref: "#/components/responses/TokenSummaryPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/auth/tokens/{token_id}/revoke:
+    parameters: [{ $ref: "#/components/parameters/TokenId" }]
+    post:
+      operationId: revokeClientToken
+      tags: [auth]
+      description: >-
+        Revokes an active token or returns the non-sensitive revoked summary for
+        an already revoked target. Unknown, pending, and discarded targets share
+        one indistinguishable resource_not_found result. The last effective
+        control token cannot be revoked online. Self-revocation succeeds only if
+        another control token remains; the old caller then receives 401 before
+        any idempotency replay on every later request.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [idempotency_conflict, last_control_token]
+        "503": [service_not_ready]
+      x-memprove-idempotency:
+        key: required
+        authentication_precedes_replay: true
+        same_key_different_digest: idempotency_conflict
+        transaction_mode: BEGIN_IMMEDIATE
+        atomic_records: [token, idempotency_record, audit]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200": { $ref: "#/components/responses/TokenSummary" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/projects/register:
+    post:
+      operationId: registerProject
+      tags: [projects]
+      description: >-
+        Registers an explicit Project identity and its root Workspace identity;
+        the returned root_workspace_id is the public Phase 1 bootstrap for
+        Session and Event workspace references. No implicit default Project is
+        created.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "409": [idempotency_conflict]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/RegisterProject" }
+      responses:
+        "201": { $ref: "#/components/responses/Project" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/projects/{project_id}:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      operationId: getProject
+      tags: [projects]
+      description: >-
+        P4-H1 (Owner, T20 SF-1/SF-2): a root Workspace row that is missing or
+        does not decode is 409 capsule_tampered, which no retry cures; 503
+        service_not_ready is only for a failure a retry can cure.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Project" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/workspaces/resolve:
+    post:
+      operationId: resolveWorkspace
+      tags: [workspaces]
+      description: >-
+        Resolves the Workspace identity of the Git worktree containing path,
+        for an explicit project_id. A linked worktree of the Project's own
+        repository (same Git common directory) that is not yet registered is
+        registered as a new Workspace exactly once; repeated calls return the
+        same Workspace (ADR 0011). It creates or mutates no Project, Git,
+        file-hash, Evidence, or Snapshot state, never registers a worktree of
+        another repository, and has no Idempotency-Key. P2-C: a registration
+        appends one workspace.registered Event without a Session in the same
+        transaction; resolving a registered Workspace appends nothing. P4-H1
+        (Owner, T20 SF-1/SF-2): a root Workspace row that is missing or does
+        not decode, or a Workspace row at the resolved worktree that does not
+        decode, is 409 capsule_tampered, which no retry cures; 503
+        service_not_ready is only for a failure a retry can cure.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found, workspace_not_resolved]
+        "409": [project_workspace_mismatch, capsule_tampered]
+        "503": [service_not_ready]
+      requestBody: { $ref: "#/components/requestBodies/ResolveWorkspace" }
+      responses:
+        "200": { $ref: "#/components/responses/Workspace" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/workspaces/{workspace_id}/state:
+    parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+    get:
+      operationId: getWorkspaceState
+      tags: [workspaces]
+      responses:
+        "200":
+          description: Snapshot-bound current workspace state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceState" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/sessions:
+    post:
+      operationId: createSession
+      tags: [sessions]
+      description: >-
+        Creates an active Session in the Workspace. The optional task_id links
+        the Session to a Task of the same Project (ADR 0012): an unknown Task
+        is 404 resource_not_found and a Task scoped to another Workspace is 409
+        project_workspace_mismatch. The daemon appends a session.started Event
+        (payload agent_id and task_id) in the same transaction, and with a
+        task_id also a task.session_linked Event on the Session (P2-C,
+        payload task_id and session_id); a replay appends nothing. P4-D
+        (Owner A1): a task_id naming a completed or cancelled Task is 409
+        invalid_transition, and nothing is written. ADR 0014 E6 (P4-F): the
+        optional resumed_from declares the Context Pack the Session continues
+        from; it is accepted only with a task_id, its project_sequence must
+        not be above the Project's latest ledger sequence, and its digests
+        and budget must have the ResumedFrom format, otherwise 400
+        invalid_request and neither the Session nor any Event is written.
+        With it, memproved appends capsule.recovered (payload
+        capsule.recovered@1 {task_id, capsule_digest, project_sequence,
+        pack_digest, budget, declared: true}) on the Session after
+        session.started and task.session_linked, in the same transaction.
+        The digests are the Session's own declaration; memproved cannot
+        recompute them. resumed_from enters the request digest only when
+        present.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [workspace_not_resolved, resource_not_found]
+        "409": [idempotency_conflict, project_workspace_mismatch, invalid_transition]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSessionRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Session" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      description: >-
+        P4-H1 (Owner, T20 SF-1/SF-2): a Session row of the page that does not
+        decode (a zero revision included) is 409 capsule_tampered, which no
+        retry cures. A Workspace whose row is missing is read as one whose
+        row does not decode: when this Project's Event chain names it, its
+        Sessions are listed; a Workspace neither a row nor an Event names is
+        404 workspace_not_resolved.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [workspace_not_resolved]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      parameters:
+        - { $ref: "#/components/parameters/WorkspaceIdQuery" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { $ref: "#/components/responses/SessionPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/sessions/{session_id}/end:
+    parameters: [{ $ref: "#/components/parameters/SessionId" }]
+    post:
+      operationId: endSession
+      tags: [sessions]
+      description: >-
+        Ends an active Session. The daemon appends a session.ended Event whose
+        payload carries reason (null when absent) in the same transaction,
+        before ended_at is written (ADR 0012); reason is also part of the
+        idempotency digest. The Session record has no reason. A replay
+        appends nothing. ADR 0013 D6 (P3-D): the optional outcome is
+        completed (the default) or abandoned; with abandoned, for a Session
+        another agent left unfinished, the daemon appends session.crashed
+        (payload session.crashed@1, {reason, outcome: abandoned}) in place of
+        session.ended, so exactly one Event records the end either way, and
+        the Session ends as with completed. outcome enters the idempotency
+        digest only when it is abandoned, so an explicit completed equals an
+        absent one. U9 A7 (Owner O3): the optional ended_by names who ends
+        the Session as abandoned, as the ender reports itself; it is
+        accepted only with outcome abandoned. Its session_id must name a
+        Session of the same Project other than the one ended, and its agent
+        follows createSession's agent rules (U8 O4); one of the two at
+        least. Otherwise 400 invalid_request, and nothing is written. With
+        it the Event is session.crashed@2, {reason, outcome: abandoned,
+        ended_by}, and the Session row keeps the ender's Session, agent
+        name, and role; without it the Event is session.crashed@1 as
+        before. ended_by enters the idempotency digest only when present.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [idempotency_conflict, invalid_transition, revision_conflict]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EndSessionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/events:
+    post:
+      operationId: ingestEvent
+      tags: [events]
+      description: >-
+        Appends one Event to its Project's hash chain (ADR 0010). session_id is
+        required for new Events; an unknown Session is 404 resource_not_found,
+        and a Session that is not active is 409 invalid_transition. The
+        event types memproved writes itself (P2-E: session.started,
+        session.ended, command.completed, checkpoint.created, task.created,
+        task.transitioned, task.session_linked, and workspace.registered;
+        P3-C: claim.superseded and decision.recorded; P3-D: session.crashed;
+        P4-F: capsule.recovered), the types ADR 0013 D8
+        reserves to memproved (claim.superseded, decision.recorded, and
+        session.crashed; P3-C2: capsule.recovered too, which memproved
+        writes since P4-F with createSession's resumed_from), and a producer.name starting with memproved, in any ASCII case
+        (P2-K), are 400 invalid_request here; producer.name is a ClientName.
+        Only memproved's own Events may
+        omit session_id (ADR 0012 D7); listEvents and getEvent return them
+        with session_id null.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found, workspace_not_resolved, resource_not_found]
+        "409": [idempotency_conflict, project_workspace_mismatch, invalid_transition]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientEventEnvelope" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listEvents
+      tags: [events]
+      description: >-
+        P4-H1 (Owner, T20 SF-1/SF-2): an Event row of the page that does not
+        decode or recompute (its digests are recomputed on read) is 409
+        capsule_tampered, which no retry cures.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      parameters:
+        - { $ref: "#/components/parameters/ProjectIdQuery" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { $ref: "#/components/responses/EventPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/events/batch:
+    post:
+      operationId: ingestEventBatch
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found, workspace_not_resolved]
+        "409": [idempotency_conflict, project_workspace_mismatch]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items: { $ref: "#/components/schemas/ClientEventEnvelope" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/events/stream:
+    get:
+      operationId: streamEvents
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "503": [service_not_ready]
+      parameters:
+        - { $ref: "#/components/parameters/ProjectIdQuery" }
+        - name: after_sequence
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Ordered server-sent event stream
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/EventStream" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/events/{event_id}:
+    parameters: [{ $ref: "#/components/parameters/EventId" }]
+    get:
+      operationId: getEvent
+      tags: [events]
+      description: >-
+        P4-H1 (Owner, T20 SF-1/SF-2): an Event row that does not decode or
+        recompute is 409 capsule_tampered, which no retry cures; an Event no
+        row holds is 404 resource_not_found.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      responses:
+        "200":
+          description: Immutable event
+          content:
+            application/json:
+              schema: { $ref: "../schemas/events/event-envelope-v1.json" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/memory-items:
+    post:
+      operationId: createMemoryItem
+      tags: [memory]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMemoryItemRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/MemoryRevision" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/memory-items/{item_id}:
+    parameters: [{ $ref: "#/components/parameters/ItemId" }]
+    get:
+      operationId: getMemoryItem
+      tags: [memory]
+      responses:
+        "200": { $ref: "#/components/responses/MemoryRevision" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/memory-items/{item_id}/revisions:
+    parameters: [{ $ref: "#/components/parameters/ItemId" }]
+    post:
+      operationId: createMemoryRevision
+      tags: [memory]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMemoryRevisionRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/MemoryRevision" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/decisions:
+    post:
+      operationId: proposeDecision
+      tags: [decisions]
+      description: >-
+        ADR 0013 D2 (P3-C). Records one Decision of a Task: memproved
+        appends one decision.recorded Event (payload decision.recorded@1:
+        task_id, text, rationale, evidence_ids) to the Session, and then one
+        claim.superseded Event (payload claim.superseded@1, relation
+        supersedes, by decision/<event_id>) per supersedes item, all in one
+        transaction; the Decision's identity is the decision.recorded Event's
+        event_id and its claim ID is decision/<event_id>. There is no accept
+        step; acceptDecision and supersedeDecision are not implemented. The
+        Session must continue task_id (else 400 invalid_request) and be
+        active (else 409 invalid_transition); an unknown Task or Session is
+        404 resource_not_found. Each evidence_ids item must be recorded
+        Evidence of the same Task, and each supersedes item a readable claim
+        of the same Task earlier in the ledger, named once, and not a fact (a
+        fact is superseded only by a fact, P3-C2); otherwise 400
+        invalid_request with a detail naming the item and the rule. A replay
+        returns the recorded Decision and appends nothing. P3-D2: content and
+        rationale hold at most 4096 characters each (else 400
+        invalid_request). U1 C4: a content or rationale that holds a string in
+        the format of a memprove token (as createCheckpoint describes) is 400
+        invalid_request with a fixed detail naming the member, before anything
+        is written. A Decision is judged by the Evidence rule of a
+        verified_fact, so it reads verified only on fresh, passed tests. U9 R1 (Owner O4, ADR 0020): a Session whose agent declared the role
+        sub_agent records no Decision: 403 role_forbidden with the fixed
+        detail "a Session declared as sub_agent cannot record a Decision; the orchestrating
+        session or a person does it",
+        and nothing is written. The role is the one the Session declared at
+        createSession (agent.role), read from the Task Capsule's ledger view;
+        a Session that declared none, an orchestrator, and a human are not
+        limited. The check comes after every 400 and 409 check of the
+        request.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied, role_forbidden]
+        "404": [resource_not_found]
+        "409": [idempotency_conflict, invalid_transition]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DecisionProposal" }
+      responses:
+        "201": { $ref: "#/components/responses/Resource" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/decisions/{decision_id}/accept:
+    parameters: [{ $ref: "#/components/parameters/DecisionId" }]
+    post:
+      operationId: acceptDecision
+      tags: [decisions]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ExpectedRevisionCommand" }
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/decisions/{decision_id}/supersede:
+    parameters: [{ $ref: "#/components/parameters/DecisionId" }]
+    post:
+      operationId: supersedeDecision
+      tags: [decisions]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SupersedeDecisionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/tasks:
+    post:
+      operationId: createTask
+      tags: [tasks]
+      description: >-
+        Creates a proposed Task. P2-C: the daemon appends one task.created
+        Event without a Session in the same transaction, recorded under the
+        Task's Workspace or, for an unscoped Task, the Project's root
+        Workspace; a replay appends nothing. P4-H1 (Owner, T20 SF-1/SF-2): a
+        root Workspace row that is missing or does not decode is 409
+        capsule_tampered, which no retry cures; 503 service_not_ready is only
+        for a failure a retry can cure.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "409": [idempotency_conflict, project_workspace_mismatch, capsule_tampered]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTaskRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      description: >-
+        P4-H1 (Owner, T20 SF-1): the Project's root Workspace is not read, so
+        its row, missing or not decoding, does not fail the list. A Task row
+        of the page that does not decode (a zero revision or an empty title
+        included) is 409 capsule_tampered, which no retry cures.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      parameters:
+        - { $ref: "#/components/parameters/ProjectIdQuery" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { $ref: "#/components/responses/TaskPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/tasks/next:
+    get:
+      operationId: getNextTask
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found, workspace_not_resolved]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/WorkspaceIdQuery" }]
+      responses:
+        "200": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/tasks/{task_id}/transition:
+    parameters: [{ $ref: "#/components/parameters/TaskId" }]
+    post:
+      operationId: transitionTask
+      tags: [tasks]
+      description: >-
+        Moves a Task along proposed -> ready -> in_progress -> completed,
+        in_progress <-> blocked, proposed|ready|blocked -> cancelled, and
+        appends one task.transitioned Event without a Session (payload
+        task_id, from, to, revision, completion_evidence_ids) in the same
+        transaction (P2-C). completed (Owner decision, P2-C) requires a
+        non-empty completion_evidence_ids: each Evidence must belong to the
+        Task, have status PASS, and be verified at the time of the
+        transition by the Recovery Preview's evidence judgement, against a
+        read-only probe of workspace_id when given (else the Workspace of the
+        Task's latest Checkpoint Snapshot, else its scoped Workspace);
+        otherwise 409 evidence_stale. An unknown workspace_id is 404
+        workspace_not_resolved and one of another Project 409
+        project_workspace_mismatch. Other targets take neither field (400
+        invalid_request). force_reason is still 400 invalid_request in Phase
+        2. A replay of a recorded transition is not judged again. The Task's
+        completion_evidence_ids are read back from its task.transitioned
+        Event. P3-D3: a passed run is not verified when the latest run of the
+        same argv in the same Task, Workspace, and repository state
+        (capture_manifest_digest) did not pass, nor (P3-L L2) a passed test
+        run when the latest test run of that argv there did not pass, so it
+        completes nothing (409 evidence_stale). P3-L L3 (T15 N3): before any
+        cited Evidence is judged, the Task Capsule's integrity check runs; a
+        tampered Task (a record of the Task missing, not recomputing, or
+        disagreeing with the ledger, or a broken Event chain) is 409
+        evidence_stale whatever it cites, and the Task and the ledger do not
+        change. P3-L3 (T16 S-2): that refusal, and only that one, carries a
+        detail of fixed text: "the integrity check of the Task failed: a
+        record of the Task is missing, does not recompute, or disagrees with
+        the ledger, so no Evidence can complete it; a rerun does not help;
+        run `memprove ledger verify` to see which record". The Problem's
+        structure and code are unchanged. P4-H1 (Owner, T20 SF-1): the
+        probed Workspace is read as the Recovery Preview reads it: a
+        workspace_id that this Project's Event chain names is the caller's
+        even when its row is missing, and a Workspace row that is missing or
+        does not decode leaves the probe unavailable, so no cited Evidence
+        is verified and the transition is 409 evidence_stale (not 503). U9 R1 (Owner O4, ADR 0020; the Owner's O8
+        exception): a completion is judged by the Session the request names
+        in its optional session_id, which the CLI's task complete and the
+        MCP complete fill with the context's Session. When that Session
+        declared the role sub_agent, the transition is 403 role_forbidden
+        with the fixed detail "a Session declared as sub_agent cannot move the Task to
+        completed; the orchestrating session or a person does it, and they can cite any
+        Session's runs", whatever runs
+        it cites, before the revision and every check of the cited Evidence,
+        and the Task and the ledger do not change. An orchestrator, a human,
+        or a Session that declared no agent completes on any Session's runs.
+        A session_id that is no Session of the Task (as its Task Capsule's
+        sessions lists them) is 400 invalid_request "$.session_id must name a
+        Session of the Task", and with another target 400 invalid_request
+        "$.session_id applies only to target_state completed". A request
+        without session_id is not judged by role (older clients, direct
+        calls): R1 guards against a mistake, not a pretence. A replay of a
+        recorded transition is not judged again.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied, role_forbidden]
+        "404": [resource_not_found, workspace_not_resolved]
+        "409": [evidence_stale, idempotency_conflict, invalid_transition, revision_conflict, project_workspace_mismatch]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/tasks/{task_id}/recovery-preview:
+    parameters: [{ $ref: "#/components/parameters/TaskId" }]
+    get:
+      operationId: getRecoveryPreview
+      tags: [recovery]
+      description: >-
+        ADR 0012 D6 (P2-B, FR-208). Read-only Recovery Preview of the Task's
+        latest Checkpoint. Freezes the Project Event sequence N, then probes
+        one Workspace with fixed-argv, read-only Git commands
+        (--no-optional-locks): workspace_id when given (it must be a
+        Workspace of the Task's Project), else the Workspace of the
+        Checkpoint's Snapshot, else the Task's scoped Workspace. Verdicts
+        propagate probe -> Snapshot -> Evidence -> statement -> Checkpoint ->
+        Task (ADR 0012 P1-P6) with precedence tampered > partial > stale >
+        verified; only verified_fact statements propagate to the Checkpoint.
+        A probe that cannot run (for example a deleted worktree) yields
+        partial, not an error. The body is RFC 8785 (JCS) bytes with no
+        generation time; preview_digest is the SHA-256 of the JCS bytes of
+        the document without preview_digest, so one (N, probe) yields
+        identical bytes. Nothing is written and no Event is appended; the
+        Task's status is never changed. P4-H1 (Owner, T20 SF-1): a Workspace
+        row that is missing is read as one that does not decode: the probe is
+        unavailable (200, never verified) and the row is not a damaged record;
+        a workspace_id that this Project's Event chain names is the asker's
+        even when its row is missing. A record of the Task that is missing or
+        does not decode is a damaged record and the document is tampered,
+        never 503; so is one whose text is not UTF-8, a zero revision, or an
+        empty identity (named "" in damaged_records). 409 capsule_tampered
+        remains for a state database that is not bound to the Project
+        (x-memprove-unbound-state) and for a stored value the view cannot
+        name as a damaged record, of which none is known.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found, workspace_not_resolved]
+        "409": [project_workspace_mismatch, capsule_tampered]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/OptionalWorkspaceIdQuery" }]
+      responses:
+        "200":
+          description: Recovery Preview (JCS bytes)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryPreview" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/tasks/{task_id}/recovery-capsule:
+    parameters: [{ $ref: "#/components/parameters/TaskId" }]
+    get:
+      operationId: getTaskCapsule
+      tags: [recovery]
+      description: >-
+        ADR 0013 D4 (P3-B, FR-405/FR-406). Read-only Task Capsule: every
+        claim of the Task (every statement of every Checkpoint the ledger
+        records for it, and every Decision), accumulated in ledger order
+        with a Task-local number, kind, standing (active, superseded,
+        withdrawn), and the verdict the Recovery Preview's functions give
+        it. Freezes the Project Event sequence N, then probes one Workspace
+        with fixed-argv, read-only Git commands (--no-optional-locks):
+        workspace_id when given (it must be a Workspace of the Task's
+        Project), else the Workspace of the latest Checkpoint's Snapshot,
+        else the Task's scoped Workspace; the probe compares at most 16
+        base commits with HEAD and lists the rest unprobed. The Task
+        verdict is the worst verdict of its active facts; a broken Event
+        chain or any record that is missing, does not recompute, or
+        disagrees with the ledger makes every claim tampered. Only
+        claim.superseded, decision.recorded, and session.crashed Events
+        written by memproved on a Session of the Task are read. The body
+        is RFC 8785 (JCS) bytes with no generation time; capsule_digest is
+        the SHA-256 of the JCS bytes of the document without
+        capsule_digest, so one (N, probe) yields identical bytes. Nothing is
+        written and no Event is appended. The frozen recovery-capsule
+        operations and schemas/recovery-capsule-v1.json are not implemented.
+        P4-H1 (Owner, T20 SF-1): a Workspace row that is missing is read as
+        one that does not decode: the probe is unavailable (200, never
+        verified) and the row is not a damaged record; a workspace_id that
+        this Project's Event chain names is the asker's even when its row is
+        missing. A record of the Task that is missing or does not decode is a
+        damaged record and the document is tampered, never 503; so is one
+        whose text is not UTF-8, a zero revision, or an empty identity (named
+        "" in damaged_records). 409 capsule_tampered remains for a state
+        database that is not bound to the Project
+        (x-memprove-unbound-state) and for a stored value the view cannot
+        name as a damaged record, of which none is known.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found, workspace_not_resolved]
+        "409": [project_workspace_mismatch, capsule_tampered]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/OptionalWorkspaceIdQuery" }]
+      responses:
+        "200":
+          description: Task Capsule (JCS bytes)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskCapsule" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/tasks/{task_id}/dependencies:
+    parameters: [{ $ref: "#/components/parameters/TaskId" }]
+    post:
+      operationId: addTaskDependency
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [dependency_cycle, idempotency_conflict, revision_conflict]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskDependencyRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Task" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/evidence/capture:
+    post:
+      operationId: captureEvidence
+      tags: [evidence]
+      description: >-
+        ADR 0012 (P2-A). Records one command or test the caller ran in its own
+        environment; memproved never runs the command. snapshot_id names the
+        new RepositorySnapshot: memproved captures the Workspace with its
+        fixed-argv, read-only Git probes (git_head and git_worktree Evidence)
+        and seals the submitted command_run or test_run Evidence into that
+        Snapshot, then appends one command.completed Event to the Session, all
+        in one transaction. Only command_run and test_run are accepted (other
+        artifact types and a non-null object_id are 400 invalid_request), and
+        test_name, test_case_count, and test_format (U9 K2) apply to test_run only. A test_run
+        passes only when exit_code is 0 and test_case_count is above 0. The
+        Session must be active (else 409 invalid_transition), belong to the
+        Workspace and continue task_id (else 409 project_workspace_mismatch
+        or 400 invalid_request); an unknown Workspace is 404
+        workspace_not_resolved, an unknown Task or Session 404
+        resource_not_found, and a snapshot_id already recorded under another
+        key 409 idempotency_conflict. The response is the command Evidence;
+        its status is the PRD FR-203 outcome PASS, FAIL, NOT_RUN, or (P2-C,
+        metadata.launch_error) UNAVAILABLE. A collector name starting with
+        memproved, in any ASCII case (P2-E, P2-K), is 400 invalid_request;
+        collector.name is a ClientName. Same-state carry-over (ADR 0013 D3,
+        P3-D): the new Snapshot also seals the command_run and test_run
+        Evidence of every earlier Snapshot of the same Task and Workspace
+        with an equal capture_manifest_digest (the same repository, HEAD,
+        branch, porcelain status, index, tracked content, and selected
+        files), unless either status lists an untracked file; an object is
+        carried only from the first Snapshot that seals it (P4-B: the one
+        the ledger records first, never by captured_at), and only when
+        that Snapshot and its Evidence recompute and agree with the ledger.
+        The response's snapshot lists them in command_evidence_ids and
+        test_evidence_ids, and command.completed records them like any
+        Evidence of the Snapshot, so one Checkpoint over the new Snapshot
+        can cite several runs of one state. A replay returns the recorded
+        result and carries nothing again.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [workspace_not_resolved, resource_not_found]
+        "409": [idempotency_conflict, project_workspace_mismatch, invalid_transition]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CaptureEvidenceRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Resource" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/evidence/{evidence_id}:
+    parameters: [{ $ref: "#/components/parameters/EvidenceId" }]
+    get:
+      operationId: getEvidence
+      tags: [evidence]
+      description: >-
+        ADR 0012 (P2-A). One Evidence object, its digests recomputed, with the
+        RepositorySnapshots that contain it. Raw Evidence stays control-only
+        until redaction rules exist. P4-B (ADR 0014, item D): snapshot_ids
+        lists them in ledger order, by the Project sequence of the first
+        memproved Event that records each (then snapshot_id; one no Event
+        records comes last), and snapshot is the first of them, the
+        Snapshot through which Task completion and a Decision judge the
+        object; captured_at plays no part. P4-H1 (Owner, T20 SF-1/SF-2): an
+        Evidence row, or a Snapshot that contains it, that does not decode or
+        recompute is 409 capsule_tampered, which no retry cures; an Evidence
+        object no row holds is 404 resource_not_found.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/verification/runs:
+    post:
+      operationId: createVerificationRun
+      tags: [verification]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateVerificationRunRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/verification/runs/{run_id}:
+    parameters: [{ $ref: "#/components/parameters/RunId" }]
+    get:
+      operationId: getVerificationRun
+      tags: [verification]
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/verification/ledger:
+    post:
+      operationId: verifyLedger
+      tags: [verification]
+      description: >-
+        P2-C (Owner decision 2026-10-02: the frozen 202 Accepted cannot carry
+        the result, so it is replaced by 200 LedgerVerification). Recomputes
+        the Project's ledger in one read transaction: the Event chain in
+        project_sequence order (digest v2, contiguous Project and Session
+        sequences, previous-digest links), then every Evidence object,
+        RepositorySnapshot, and Checkpoint with its digests recomputed. The
+        result counts the records checked, gives the stored digest of the
+        chain head, and names the first record that does not hold (Events
+        first, then Evidence, Snapshots, Checkpoints, each in identity
+        order); a ledger that does not verify is a 200 result with valid
+        false, not an error. The frozen Idempotency-Key is required and
+        checked but not recorded: the operation writes nothing and appends
+        no Event, so a repeat verifies again. An unknown Project is 404
+        project_not_found. P4-H1 (Owner, T20 SF-2): a row that is missing or
+        does not decode anywhere the check reads, a Checkpoint statement's
+        evidence_id included, is reported as first_failure (valid false),
+        never as an error; 503 service_not_ready is only for a database that
+        cannot be read. A value that decodes as its SQL type but not as what
+        its column holds is such a row too: a Project sequence below 1 (the
+        failure then has project_sequence null), text that is not UTF-8, a
+        Task row whose task_id is not a UUIDv7. T21 (V1-S-2): so is a Task
+        row any other column of which (project_id, title, created_at,
+        updated_at, workspace_id, description) does not decode as listTasks
+        and getTaskCapsule decode it; and a Task that a task.created or
+        task.transitioned Event of memproved names and no row holds is
+        reported missing (record_type task) with the Project sequence of its
+        first Task Event. A state database that is not bound to the Project
+        (x-memprove-unbound-state) is 409 capsule_tampered, which no retry
+        cures.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [project_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectCommand" }
+      responses:
+        "200":
+          description: Ledger verification result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerVerification" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/conflicts:
+    get:
+      operationId: listConflicts
+      tags: [conflicts]
+      parameters:
+        - { $ref: "#/components/parameters/ProjectIdQuery" }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/ConflictState" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { $ref: "#/components/responses/Page" }
+  /v1/conflicts/{conflict_id}/acknowledge:
+    parameters: [{ $ref: "#/components/parameters/ConflictId" }]
+    post:
+      operationId: acknowledgeConflict
+      tags: [conflicts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/ExpectedRevisionCommand" }
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/conflicts/{conflict_id}/resolve:
+    parameters: [{ $ref: "#/components/parameters/ConflictId" }]
+    post:
+      operationId: resolveConflict
+      tags: [conflicts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveConflictRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/conflicts/{conflict_id}/dismiss:
+    parameters: [{ $ref: "#/components/parameters/ConflictId" }]
+    post:
+      operationId: dismissConflict
+      tags: [conflicts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DismissConflictRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/checkpoints:
+    post:
+      operationId: createCheckpoint
+      tags: [checkpoints]
+      description: >-
+        ADR 0012 (P2-A). Records a Checkpoint over an already recorded
+        RepositorySnapshot (from captureEvidence) without probing the
+        repository again: the Snapshot is the anchor, and freshness is judged
+        when read. Statements cite Evidence of that Snapshot; every
+        verified_completed_work statement is a verified_fact; every
+        verified_fact, in any section (P2-E), must cite a passed test_run
+        (exit_code 0 and test_case_count above 0), and every test_run it
+        cites must have passed; next_action is a recommendation or unknown;
+        otherwise 400 invalid_request. A failed or unconfirmed result is
+        recorded as user_supplied_context, recommendation, or unknown. project_event_sequence is the Project's latest Event
+        sequence; a checkpoint.created Event is appended to the Session in
+        the same transaction. Unknown Snapshot, Task, or Session is 404
+        resource_not_found; a Workspace, Session, and Snapshot that disagree
+        are 409 project_workspace_mismatch; a Session that does not continue
+        task_id is 400 invalid_request; an ended Session is 409
+        invalid_transition. ADR 0013 (P3-C): each statement's supersedes item
+        and each withdrawals item is recorded as one claim.superseded Event
+        of memproved (payload claim.superseded@1: task_id, relation
+        supersedes or withdraws, target, and by, the new statement's claim ID
+        or null) after checkpoint.created, in the same transaction, in
+        request order; every target must be a readable claim of the same
+        Task earlier in the ledger, not a statement of this Checkpoint, and
+        named once per request, and a supersedes target that is a fact needs
+        a verified_fact statement (P3-C2: a fact is superseded only by a
+        fact; withdrawals take any claim), otherwise 400 invalid_request
+        with a detail naming the item and the rule. A replay appends
+        nothing. P3-D2: withdrawing a fact needs withdrawal_reason (else 400
+        invalid_request, detail "$.withdrawals[i] names a fact; withdrawing a
+        fact needs $.withdrawal_reason ..."); a withdrawal_reason without
+        withdrawals is 400 invalid_request; when given, it is recorded as the
+        optional reason member of every withdraws edge's claim.superseded@1
+        payload (absent otherwise, so earlier payloads keep their shape).
+        Every statement text and withdrawal_reason holds at most 4096
+        characters (else 400 invalid_request). U1 C4: a statement text or
+        withdrawal_reason that holds a string in the format of a memprove
+        token (a run of exactly 43 characters of A-Z, a-z, 0-9, hyphen, and
+        underscore, with none of those next to it) is 400 invalid_request
+        with a fixed detail that names the member and does not repeat the
+        text, before anything is written. P3-D3: a verified_fact, in any
+        section, may not cite a passed run that the latest run of the same
+        argv (element by element) in the same Task, Workspace, and repository
+        state (capture_manifest_digest) overrules by not passing, whether or
+        not that run was carried over; otherwise 400 invalid_request. Its
+        detail (P3-L L1, P3-L3) first names, in one sentence and in request
+        order, the position of every such citation, numbered: "<n>
+        verified_fact citations name overruled passed runs: (1)
+        $.<section>[i].evidence_ids[j], (2) ...", where j is the position in
+        the request's evidence_ids; then it describes the citations one by
+        one, "(k) Evidence <cited run> passed; the later run <later run> of
+        its argv in this state did not pass: rerun until it passes.", or,
+        for a test run the latest test run of its argv overrules (P3-L L2),
+        "(k) test run Evidence <cited run> passed; the latest test run
+        <that test run> did not pass: it needs a later passed test run."; a
+        description that does not fit within the 512 characters is left out
+        whole, and the detail then ends "<m> more not described.". A single
+        citation reads "1 verified_fact citation names an overruled passed
+        run: (1) ...". Up to eight positions all fit while every statement
+        index i and Evidence index j in them is below 1000 (P4-A); with
+        larger indices fewer may fit. When the positions themselves do not
+        all fit, the first sentence ends ", and <m> more." and nothing
+        follows it. U9 R1 (Owner O4, ADR 0020): when the Session's agent declared the
+        role sub_agent, every withdrawals target must be a claim written by
+        a Session whose agent declared the same agent name, and every
+        supersedes target such a claim or an open item; any other target
+        (written by a Session of another agent name, or by one that declared
+        no agent; for withdrawals an open item too) is 403
+        role_forbidden with the fixed detail "a Session declared as sub_agent can supersede
+        open items and the statements written by Sessions of the same agent name, and can
+        withdraw only statements written by Sessions of the same agent name; superseding
+        another agent's facts, next actions, and Decisions, and withdrawing any statement
+        another agent wrote, is for the orchestrating session or a person", and
+        nothing of the Checkpoint is written. The
+        implicit chain of next actions is no edge and is not limited. The
+        roles and authors are read from the Task Capsule's ledger view; the
+        check comes after every 400 and 409 check of the request.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-write] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied, role_forbidden]
+        "404": [workspace_not_resolved, resource_not_found]
+        "409": [idempotency_conflict, project_workspace_mismatch, invalid_transition]
+        "503": [service_not_ready]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCheckpointRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Resource" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/checkpoints/{checkpoint_id}:
+    parameters: [{ $ref: "#/components/parameters/CheckpointId" }]
+    get:
+      operationId: getCheckpoint
+      tags: [checkpoints]
+      description: >-
+        ADR 0012 (P2-A). One Checkpoint, its digest and those of its Snapshot
+        and Evidence recomputed, with its statements and Snapshot summary.
+        P4-H1 (Owner, T20 SF-1/SF-2): a Checkpoint row, or a record it is read
+        with, that is missing or does not decode or recompute is 409
+        capsule_tampered, which no retry cures; a Checkpoint no row holds is
+        404 resource_not_found.
+      security: [{ bearerAuth: [] }]
+      x-memprove-access: { kind: AnyOf, scopes: [control, mcp-read] }
+      x-memprove-problem-codes:
+        "400": [invalid_request]
+        "401": [authentication_required]
+        "403": [policy_denied]
+        "404": [resource_not_found]
+        "409": [capsule_tampered]
+        "503": [service_not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Resource" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /v1/recovery-capsules:
+    post:
+      operationId: createRecoveryCapsule
+      tags: [recovery]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCapsuleRequest" }
+      responses:
+        "201":
+          description: Canonical Recovery Capsule
+          content:
+            application/json:
+              schema: { $ref: "../schemas/recovery-capsule-v1.json" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/recovery-capsules/select:
+    post:
+      operationId: selectRecoveryCapsule
+      tags: [recovery]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceCommand" }
+      responses:
+        "200":
+          description: Selected capsule and selection reason
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapsuleSelection" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/recovery-capsules/{capsule_id}:
+    parameters: [{ $ref: "#/components/parameters/CapsuleId" }]
+    get:
+      operationId: getRecoveryCapsule
+      tags: [recovery]
+      responses:
+        "200":
+          description: Canonical Recovery Capsule
+          content:
+            application/json:
+              schema: { $ref: "../schemas/recovery-capsule-v1.json" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /v1/recovery-capsules/{capsule_id}/verify:
+    parameters: [{ $ref: "#/components/parameters/CapsuleId" }]
+    post:
+      operationId: verifyRecoveryCapsule
+      tags: [recovery]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyCapsuleRequest" }
+      responses:
+        "200":
+          description: Read-only verification and drift report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapsuleValidation" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/context-packs:
+    post:
+      operationId: createContextPack
+      tags: [contexts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContextPackRequest" }
+      responses:
+        "201":
+          description: Immutable Context Pack
+          content:
+            application/json:
+              schema: { $ref: "../schemas/context-pack-v1.json" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /v1/context-packs/{context_pack_id}:
+    parameters: [{ $ref: "#/components/parameters/ContextPackId" }]
+    get:
+      operationId: getContextPack
+      tags: [contexts]
+      responses:
+        "200":
+          description: Immutable Context Pack
+          content:
+            application/json:
+              schema: { $ref: "../schemas/context-pack-v1.json" }
+        "404": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-scoped-token
+      description: >-
+        Only an active token whose verifier hash matches may authenticate.
+        Unknown, pending, discarded, and revoked credentials all fail with
+        401 authentication_required. Plaintext secrets and full bearer
+        credentials are never persisted; only verifier hashes are stored.
+      x-memprove-token-state-authentication:
+        active: authenticate_after_verifier_hash_match
+        pending: reject_401
+        discarded: reject_401
+        revoked: reject_401
+        unknown: reject_401
+      x-memprove-credential-storage:
+        persisted_secret_material: verifier_hash_only
+        forbidden: [plaintext_secret, full_bearer_credential]
+  headers:
+    WwwAuthenticate:
+      description: >-
+        Required RFC 6750 Bearer challenge. The value is exactly Bearer so
+        unknown, pending, discarded, and revoked credentials remain
+        indistinguishable at the authentication boundary.
+      required: true
+      schema: { type: string, const: Bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 200 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string, minLength: 1 }
+    ProjectIdQuery:
+      name: project_id
+      in: query
+      required: true
+      schema: { $ref: "#/components/schemas/UuidV7" }
+    WorkspaceIdQuery:
+      name: workspace_id
+      in: query
+      required: true
+      schema: { $ref: "#/components/schemas/UuidV7" }
+    OptionalWorkspaceIdQuery:
+      name: workspace_id
+      in: query
+      required: false
+      description: The Workspace the asker stands in (ADR 0012 D6).
+      schema: { $ref: "#/components/schemas/UuidV7" }
+    ProjectId: { name: project_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    WorkspaceId: { name: workspace_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    TokenId: { name: token_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    SessionId: { name: session_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    EventId: { name: event_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    ItemId: { name: item_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    DecisionId: { name: decision_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    TaskId: { name: task_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    EvidenceId: { name: evidence_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    RunId: { name: run_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    ConflictId: { name: conflict_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    CheckpointId: { name: checkpoint_id, in: path, required: true, schema: { $ref: "#/components/schemas/UuidV7" } }
+    CapsuleId: { name: capsule_id, in: path, required: true, schema: { $ref: "#/components/schemas/Sha256" } }
+    ContextPackId: { name: context_pack_id, in: path, required: true, schema: { $ref: "#/components/schemas/Sha256" } }
+  requestBodies:
+    RegisterProject:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RegisterProjectRequest" }
+    ResolveWorkspace:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ResolveWorkspaceRequest" }
+    ExpectedRevisionCommand:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ExpectedRevisionCommand" }
+  responses:
+    Health:
+      description: Process health
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: { enum: [ok] }
+    Problem:
+      description: Stable machine-readable problem
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnauthorizedProblem:
+      description: Authentication is required
+      headers:
+        WWW-Authenticate: { $ref: "#/components/headers/WwwAuthenticate" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example:
+            type: https://continuity.local/problems/authentication-required
+            title: Authentication required
+            status: 401
+            code: authentication_required
+            request_id: 018f47a0-0000-7000-8000-000000000001
+            retryable: false
+    Accepted:
+      description: Command accepted for durable or asynchronous processing
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [schema_version, request_id, status]
+            properties:
+              schema_version: { const: 1 }
+              request_id: { $ref: "#/components/schemas/UuidV7" }
+              status: { enum: [accepted] }
+              resource_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+    Project:
+      description: Registered project
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Project" }
+    Workspace:
+      description: Resolved workspace
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Workspace" }
+    Session:
+      description: Agent session
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Session" }
+    SessionPage:
+      description: Snapshot-bound Session page
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SessionPage" }
+    EventPage:
+      description: Snapshot-bound Event page
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EventPage" }
+    MemoryRevision:
+      description: Immutable memory revision
+      content:
+        application/json:
+          schema: { $ref: "../schemas/memory/memory-revision-v1.json" }
+    Task:
+      description: Current task projection
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Task" }
+    TaskPage:
+      description: Snapshot-bound Task page
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TaskPage" }
+    TokenCreated:
+      description: Newly created token with its one-time secret segment
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TokenCreated" }
+    TokenSummary:
+      description: Non-sensitive token lifecycle summary
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TokenSummary" }
+    TokenSummaryPage:
+      description: Bounded non-sensitive token summary page
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TokenSummaryPage" }
+    Resource:
+      description: Versioned resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Resource" }
+    Page:
+      description: Snapshot-bound page
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Page" }
+  schemas:
+    UuidV7:
+      type: string
+      format: uuid
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    Sha256:
+      type: string
+      pattern: "^sha256:[0-9a-f]{64}$"
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, request_id, retryable]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string, minLength: 1 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        code:
+          enum:
+            - invalid_request
+            - unsupported_scope
+            - authentication_required
+            - policy_denied
+            - project_not_found
+            - workspace_not_resolved
+            - project_workspace_mismatch
+            - resource_not_found
+            - revision_conflict
+            - invalid_transition
+            - dependency_cycle
+            - evidence_stale
+            - capsule_stale
+            - capsule_tampered
+            - context_unavailable
+            - command_timeout
+            - store_corrupt
+            - idempotency_mismatch
+            - idempotency_conflict
+            - last_control_token
+            - service_not_ready
+            - provider_unavailable
+            - role_forbidden
+        request_id: { $ref: "#/components/schemas/UuidV7" }
+        retryable: { type: boolean }
+      oneOf:
+        - required: [detail]
+          properties:
+            status: { const: 400 }
+            code: { enum: [invalid_request, unsupported_scope] }
+            detail: { type: string, minLength: 1, maxLength: 512 }
+        - not: { required: [detail] }
+          properties:
+            status: { const: 401 }
+            code: { enum: [authentication_required] }
+        - not: { required: [detail] }
+          properties:
+            status: { const: 403 }
+            code: { enum: [policy_denied] }
+        - required: [detail]
+          properties:
+            status: { const: 403 }
+            code: { enum: [role_forbidden] }
+            detail: { type: string, minLength: 1, maxLength: 512 }
+        - properties:
+            status: { const: 404 }
+            code: { enum: [project_not_found, workspace_not_resolved, resource_not_found] }
+        - properties:
+            status: { const: 409 }
+            code:
+              enum:
+                - project_workspace_mismatch
+                - revision_conflict
+                - invalid_transition
+                - dependency_cycle
+                - evidence_stale
+                - capsule_stale
+                - capsule_tampered
+                - idempotency_mismatch
+                - idempotency_conflict
+                - last_control_token
+        - properties:
+            status: { const: 500 }
+            code: { enum: [store_corrupt] }
+        - properties:
+            status: { const: 503 }
+            code: { enum: [context_unavailable, service_not_ready, provider_unavailable] }
+        - properties:
+            status: { const: 504 }
+            code: { enum: [command_timeout] }
+    Status:
+      type: object
+      additionalProperties: false
+      required: [schema_version, ready, writer_queue_depth, project_count]
+      properties:
+        schema_version: { const: 1 }
+        ready: { type: boolean }
+        writer_queue_depth: { type: integer, minimum: 0 }
+        project_count: { type: integer, minimum: 0 }
+    Version:
+      type: object
+      additionalProperties: false
+      required: [schema_version, application_version, api_major, capabilities]
+      properties:
+        schema_version: { const: 1 }
+        application_version: { type: string, minLength: 1 }
+        api_major: { const: 1 }
+        capabilities: { type: array, items: { type: string }, uniqueItems: true }
+        build: { type: string, pattern: "^(?:[0-9a-f]{12}(?:-dirty)?|unknown)$" }
+    ClientScope:
+      enum: [control, ingest-only, mcp-read, mcp-write, proxy-client]
+    CreateClientTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, client_label, scopes]
+      properties:
+        schema_version: { const: 1 }
+        client_label:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[^\u0000-\u001F\u007F]+$'
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ClientScope" }
+    TokenCreated:
+      type: object
+      additionalProperties: false
+      required: [schema_version, token_id, client_label, scopes, secret]
+      properties:
+        schema_version: { const: 1 }
+        token_id: { $ref: "#/components/schemas/UuidV7" }
+        client_label: { type: string, minLength: 1, maxLength: 128 }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ClientScope" }
+        secret:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: "^[A-Za-z0-9_-]{43}$"
+    TokenSummary:
+      type: object
+      additionalProperties: false
+      required: [schema_version, token_id, client_label, scopes, status, created_at, revoked_at]
+      properties:
+        schema_version: { const: 1 }
+        token_id: { $ref: "#/components/schemas/UuidV7" }
+        client_label: { type: string, minLength: 1, maxLength: 128 }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ClientScope" }
+        status: { enum: [active, revoked] }
+        created_at: { type: string, format: date-time }
+        revoked_at:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+      oneOf:
+        - properties:
+            status: { const: active }
+            revoked_at: { type: "null" }
+        - properties:
+            status: { const: revoked }
+            revoked_at: { type: string, format: date-time }
+    TokenSummaryPage:
+      type: object
+      additionalProperties: false
+      required: [schema_version, items, next_cursor]
+      properties:
+        schema_version: { const: 1 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TokenSummary" }
+        next_cursor: { type: [string, "null"] }
+    RegisterProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, root]
+      properties:
+        schema_version: { const: 1 }
+        root: { type: string, minLength: 1 }
+    ResolveWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, path]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        path: { type: string, minLength: 1 }
+    Project:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, root_workspace_id, kind, revision]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        root_workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        kind: { enum: [git, directory] }
+        revision: { type: integer, minimum: 1 }
+    Workspace:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id, project_id, revision]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        revision: { type: integer, minimum: 1 }
+    WorkspaceState:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id, project_event_seq, active_task_ids, open_conflict_ids]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        project_event_seq: { type: integer, minimum: 0 }
+        active_task_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        open_conflict_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        latest_checkpoint_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+    Session:
+      type: object
+      additionalProperties: false
+      required: [schema_version, session_id, workspace_id, agent_id, state, revision]
+      properties:
+        schema_version: { const: 1 }
+        session_id: { $ref: "#/components/schemas/UuidV7" }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        agent_id: { $ref: "#/components/schemas/UuidV7" }
+        state: { enum: [active, ended, crashed] }
+        revision: { type: integer, minimum: 1 }
+        agent:
+          description: >-
+            U8 A1 (Owner O4): the agent the Session declared at
+            createSession, from its row; absent for a Session that declared
+            none. parent_session_id is absent when the agent names none.
+          type: object
+          additionalProperties: false
+          required: [name, role]
+          properties:
+            name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+            role: { enum: [orchestrator, sub_agent, human] }
+            parent_session_id: { $ref: "#/components/schemas/UuidV7" }
+        ended_by:
+          description: >-
+            U9 A7 (Owner O3): who ended the Session as abandoned, from its
+            row (migration 0009); absent for every other Session. Each
+            member is absent when the ender did not report it; the row keeps
+            the agent's name and role, not its parent.
+          type: object
+          additionalProperties: false
+          properties:
+            session_id: { $ref: "#/components/schemas/UuidV7" }
+            agent:
+              type: object
+              additionalProperties: false
+              required: [name, role]
+              properties:
+                name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+                role: { enum: [orchestrator, sub_agent, human] }
+    SessionPage:
+      type: object
+      additionalProperties: false
+      required: [schema_version, snapshot_sequence, items]
+      properties:
+        schema_version: { const: 1 }
+        snapshot_sequence: { type: integer, minimum: 0 }
+        items: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        next_cursor: { type: [string, "null"] }
+    EventPage:
+      type: object
+      additionalProperties: false
+      required: [schema_version, snapshot_sequence, items]
+      properties:
+        schema_version: { const: 1 }
+        snapshot_sequence: { type: integer, minimum: 0 }
+        items: { type: array, items: { $ref: "../schemas/events/event-envelope-v1.json" } }
+        next_cursor: { type: [string, "null"] }
+    EventStream:
+      type: string
+      minLength: 1
+      pattern: '^id: [0-9]+\nevent: continuity.event\ndata: \{[^\r\n]*\}\n\n$'
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id, agent_id]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        agent_id: { $ref: "#/components/schemas/UuidV7" }
+        task_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        resumed_from: { oneOf: [{ $ref: "#/components/schemas/ResumedFrom" }, { type: "null" }] }
+        agent:
+          description: >-
+            U8 A1 (Owner O4): who the Session's agent is, as the client
+            declares it: a short name, a role (a record only; memproved
+            refuses nothing by it), and the Session that dispatched it,
+            which must be a Session of the same Project in any state.
+            Otherwise 400 invalid_request and nothing is written. With it,
+            memproved records the agent in the Session's row and in its
+            session.started Event as session.started@3 (payload agent_id,
+            task_id, and agent {name, role, parent_session_id}); without
+            it, session.started@1 is written as before. agent enters the
+            request digest only when present.
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [name, role]
+              properties:
+                name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+                role: { enum: [orchestrator, sub_agent, human] }
+                parent_session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+    ResumedFrom:
+      description: >-
+        ADR 0014 E6 (P4-F): the Context Pack a Session declares it continues
+        from, as the Pack's first and last lines name it. Session-reported:
+        memproved checks the format, the budget range, and that
+        project_sequence is at most the Project's latest ledger sequence, but
+        cannot recompute either digest.
+      type: object
+      additionalProperties: false
+      required: [capsule_digest, project_sequence, pack_digest, budget]
+      properties:
+        capsule_digest: { $ref: "#/components/schemas/Sha256" }
+        project_sequence: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        pack_digest: { $ref: "#/components/schemas/Sha256" }
+        budget: { type: integer, minimum: 1000, maximum: 1000000 }
+    ExpectedRevisionCommand:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+    EndSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        outcome: { enum: [completed, abandoned], default: completed }
+        ended_by:
+          description: >-
+            U9 A7 (Owner O3): who ends the Session as abandoned, as the ender
+            reports itself: its own Session (never the one ended), the agent
+            it declares, or both; only with outcome abandoned. null is the
+            same as absent.
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              properties:
+                session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+                agent:
+                  oneOf:
+                    - type: "null"
+                    - type: object
+                      additionalProperties: false
+                      required: [name, role]
+                      properties:
+                        name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+                        role: { enum: [orchestrator, sub_agent, human] }
+                        parent_session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+    CreateMemoryItemRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, kind, content]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        kind: { enum: [observation, fact, hypothesis, decision, plan] }
+        key: { type: string, minLength: 1 }
+        content: { type: string, minLength: 1 }
+        derived: { type: boolean, default: false }
+    CreateMemoryRevisionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, content]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        content: { type: string, minLength: 1 }
+        relation: { enum: [supersedes, contradicts] }
+    DecisionProposal:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0013 D2 (P3-C) amends the frozen proposal as P2-A amended
+        captureEvidence: task_id and session_id are required and name the
+        Project; content is the decision; rationale, evidence_ids, and
+        supersedes are optional. project_id and decision_key are removed: the
+        Task gives the Project, and a Decision is identified by its Event,
+        never by a caller-chosen key (D1).
+      required: [schema_version, task_id, session_id, content]
+      properties:
+        schema_version: { const: 1 }
+        task_id: { $ref: "#/components/schemas/UuidV7" }
+        session_id: { $ref: "#/components/schemas/UuidV7" }
+        content: { type: string, minLength: 1, maxLength: 4096 }
+        rationale: { oneOf: [{ type: string, minLength: 1, maxLength: 4096 }, { type: "null" }] }
+        evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        supersedes: { type: array, items: { $ref: "#/components/schemas/ClaimId" }, uniqueItems: true }
+    SupersedeDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, superseded_revision_id, replacement_content]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        superseded_revision_id: { $ref: "#/components/schemas/UuidV7" }
+        replacement_content: { type: string, minLength: 1 }
+    TaskState: { enum: [proposed, ready, in_progress, blocked, completed, cancelled] }
+    Task:
+      type: object
+      additionalProperties: false
+      required: [schema_version, task_id, project_id, title, state, revision, dependency_ids, completion_evidence_ids]
+      properties:
+        schema_version: { const: 1 }
+        task_id: { $ref: "#/components/schemas/UuidV7" }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        title: { type: string, minLength: 1 }
+        state: { $ref: "#/components/schemas/TaskState" }
+        revision: { type: integer, minimum: 1 }
+        dependency_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        completion_evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+    TaskPage:
+      type: object
+      additionalProperties: false
+      required: [schema_version, snapshot_sequence, items]
+      properties:
+        schema_version: { const: 1 }
+        snapshot_sequence: { type: integer, minimum: 0 }
+        items: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        next_cursor: { type: [string, "null"] }
+    CreateTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, title]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+    TaskTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, target_state]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        target_state: { $ref: "#/components/schemas/TaskState" }
+        completion_evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        force_reason: { type: string, minLength: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        session_id:
+          $ref: "#/components/schemas/UuidV7"
+          description: >-
+            U9 R1 (the Owner's O8 exception to R1, ADR 0020): the Session
+            that asks for the completion, one of the Task's Sessions; a
+            sub_agent's is 403 role_forbidden. Only with target_state
+            completed. Absent: no role is checked.
+    TaskDependencyRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, dependency_task_id]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        dependency_task_id: { $ref: "#/components/schemas/UuidV7" }
+    CaptureEvidenceRequest:
+      type: object
+      additionalProperties: false
+      description: ADR 0012 adds the required task_id and session_id and types metadata for command_run and test_run.
+      required: [schema_version, workspace_id, task_id, session_id, artifact_type, snapshot_id, metadata]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        task_id: { $ref: "#/components/schemas/UuidV7" }
+        session_id: { $ref: "#/components/schemas/UuidV7" }
+        artifact_type: { enum: [git_commit, file_content, file_slice, diff, command_run, test_run, tool_call, human_approval] }
+        snapshot_id: { $ref: "#/components/schemas/UuidV7" }
+        object_id: { oneOf: [{ $ref: "#/components/schemas/Sha256" }, { type: "null" }] }
+        metadata: { type: object }
+      if:
+        required: [artifact_type]
+        properties: { artifact_type: { enum: [command_run, test_run] } }
+      then:
+        properties: { metadata: { $ref: "#/components/schemas/CommandRunMetadata" } }
+    CommandRunMetadata:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0012. A command the caller ran: its argv, exit code, start and end
+        times, the SHA-256 of the complete stdout and stderr, and their last
+        4096 characters at most. test_case_count is declared by the caller
+        (PRD FR-203 names no source); a test without it or with 0 never
+        passes. P2-C: empty tails beside digests of non-empty streams mean
+        the caller kept only the digests (memprove run --digest-only).
+        launch_error records a command the caller could not start, with
+        exit_code -1 (no process exited; a started process never reports
+        -1); such a run is UNAVAILABLE and never passes.
+      required: [argv, exit_code, started_at, finished_at, stdout_tail, stderr_tail, stdout_sha256, stderr_sha256, collector]
+      properties:
+        argv: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        exit_code: { type: integer, minimum: -2147483648, maximum: 2147483647 }
+        started_at: { type: string, format: date-time, pattern: "Z$" }
+        finished_at: { type: string, format: date-time, pattern: "Z$" }
+        stdout_tail: { type: string, maxLength: 4096 }
+        stderr_tail: { type: string, maxLength: 4096 }
+        stdout_sha256: { $ref: "#/components/schemas/Sha256" }
+        stderr_sha256: { $ref: "#/components/schemas/Sha256" }
+        collector:
+          type: object
+          additionalProperties: false
+          required: [name, version]
+          properties:
+            name: { $ref: "#/components/schemas/ClientName" }
+            version: { type: string, minLength: 1 }
+        test_name: { type: string, minLength: 1 }
+        test_case_count: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        test_format:
+          description: >-
+            U9 K2. How the caller made a test_run: cargo or pytest (cases
+            counted from that runner's summary, memprove run
+            --test-format) or cases (a count the caller declared,
+            --test-cases). Optional, for a test_run only (else 400
+            invalid_request); stored in the Evidence payload and, as
+            command.test_format of a command.completed@2 Event, in the
+            ledger, and listed by the Task Capsule so that a rerun is named
+            from the record. A run without it is recorded and read as before.
+          enum: [cargo, pytest, cases]
+        launch_error: { type: string, minLength: 1 }
+    ClientName:
+      description: >-
+        P2-K (T11 S-4). A producer or collector name a client submits: ASCII
+        letters, digits, ".", "_", and "-" only, so no look-alike of
+        memproved (a leading space, a Cyrillic letter, a zero-width
+        character) is accepted. A name that starts with memproved in any
+        ASCII case is reserved and 400 invalid_request. Responses return a
+        stored name as recorded; an Event recorded before P2-K may carry
+        another.
+      type: string
+      pattern: "^[A-Za-z0-9._-]+$"
+    ClientEventEnvelope:
+      description: >-
+        The Event envelope as a client submits it to ingestEvent and
+        ingestEventBatch: the envelope schema, with producer.name a
+        ClientName (P2-K). Responses use the envelope schema itself.
+      allOf:
+        - $ref: "../schemas/events/event-envelope-v1.json"
+        - type: object
+          properties:
+            producer:
+              type: object
+              properties:
+                name: { $ref: "#/components/schemas/ClientName" }
+    CreateVerificationRunRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id, evidence_ids]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        evidence_ids: { type: array, minItems: 1, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+    ProjectCommand:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+    LedgerVerification:
+      type: object
+      additionalProperties: false
+      description: >-
+        P2-C verifyLedger result. checked counts the records recomputed;
+        valid is true exactly when first_failure is null. project_sequence
+        is the Project's latest Event sequence (0 without Events) and
+        head_event_sha256 the stored digest of that Event. first_failure
+        names the record type and stored identity, the Project sequence of
+        an Event row, and why it does not hold. P2-E: an Evidence object,
+        Snapshot, or Checkpoint must also carry the digest memproved's own
+        command.completed or checkpoint.created Event recorded for it, a
+        Checkpoint's project_event_sequence must be the sequence just before
+        its checkpoint.created Event, and a Task row's status and revision
+        must be those of its last task.created or task.transitioned Event
+        (U1 B2: a Task row that no such Event names is a task first_failure;
+        before, it was counted but not compared). P2-K: every Evidence
+        object, Snapshot, and Checkpoint such an Event records must exist;
+        checked also counts
+        those no row holds, and first_failure names a missing one with the
+        Project sequence of the first Event that records it. T21 (V1-S-2):
+        every Task row must also decode as listTasks reads it, and every
+        Task a task.created or task.transitioned Event names must have a
+        row; checked.tasks counts those no row holds too. U1 B4 (Owner O5):
+        the Project's root Workspace row must exist; the root is the
+        Workspace of the repository the registry records (its Git directory
+        is the common directory, or a linked worktree's under it) that no
+        workspace.registered Event announces, no longer the first by
+        created_at. When none is, first_failure has record_type workspace,
+        after every Task, with the root's workspace_id and the Project
+        sequence of the first task.created Event of a Task without a scope
+        (recorded under the root), or an empty record_id and a null
+        sequence when there is no such Event. Workspaces are not counted in
+        checked. U1 B1 (T21 V1R-1): a Task row's project_id must be the
+        Project of the state database, its created_at the recorded_at of its
+        task.created Event, and its updated_at that of its last Task Event;
+        every Workspace row must decode and name the Project (a workspace
+        first_failure, after every Task, in identity order); a Snapshot's
+        project_id must be the Project and its captured_at the recorded_at
+        of the command.completed Event of its capture (a snapshot
+        first_failure). Not detected: a
+        truncated chain tail and a chain recomputed whole by the same OS user
+        (ADR 0012, "What verifyLedger guarantees").
+      required: [schema_version, project_id, project_sequence, valid, checked, head_event_sha256, first_failure]
+      properties:
+        schema_version: { const: 1 }
+        project_id: { $ref: "#/components/schemas/UuidV7" }
+        project_sequence: { type: integer, minimum: 0 }
+        valid: { type: boolean }
+        checked:
+          type: object
+          additionalProperties: false
+          required: [events, evidence, snapshots, checkpoints, tasks]
+          properties:
+            events: { type: integer, minimum: 0 }
+            evidence: { type: integer, minimum: 0 }
+            snapshots: { type: integer, minimum: 0 }
+            checkpoints: { type: integer, minimum: 0 }
+            tasks: { type: integer, minimum: 0 }
+        head_event_sha256: { oneOf: [{ $ref: "#/components/schemas/Sha256" }, { type: "null" }] }
+        first_failure:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [record_type, record_id, project_sequence, reason]
+              properties:
+                record_type: { enum: [event, evidence, snapshot, checkpoint, task, workspace] }
+                record_id: { type: string }
+                project_sequence: { oneOf: [{ type: integer, minimum: 1 }, { type: "null" }] }
+                reason: { type: string, minLength: 1 }
+    WorkspaceCommand:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+    ConflictState: { enum: [open, acknowledged, resolved, dismissed] }
+    ResolveConflictRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, reason]
+      anyOf:
+        - required: [winning_revision_id]
+        - required: [superseding_revision_id]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        winning_revision_id: { $ref: "#/components/schemas/UuidV7" }
+        superseding_revision_id: { $ref: "#/components/schemas/UuidV7" }
+        reason: { type: string, minLength: 1 }
+    DismissConflictRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, expected_revision, reason]
+      properties:
+        schema_version: { const: 1 }
+        expected_revision: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+    CreateCheckpointRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0012 adds task_id, session_id, snapshot_id, and the three
+        statement sections; ADR 0013 (P3-C) adds withdrawals, the claim IDs
+        of earlier claims of the Task that no longer hold, with nothing that
+        replaces them. P3-D2 adds withdrawal_reason, why they no longer
+        hold: required when a withdrawn claim is a fact, refused without
+        withdrawals.
+      required: [schema_version, workspace_id, objective, task_id, session_id, snapshot_id, next_action]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        objective: { type: string, minLength: 1 }
+        task_id: { $ref: "#/components/schemas/UuidV7" }
+        session_id: { $ref: "#/components/schemas/UuidV7" }
+        snapshot_id: { $ref: "#/components/schemas/UuidV7" }
+        verified_completed_work: { type: array, items: { $ref: "#/components/schemas/CheckpointStatement" } }
+        open_items: { type: array, items: { $ref: "#/components/schemas/CheckpointStatement" } }
+        next_action: { $ref: "#/components/schemas/CheckpointStatement" }
+        withdrawals: { type: array, items: { $ref: "#/components/schemas/ClaimId" }, uniqueItems: true }
+        withdrawal_reason: { type: string, minLength: 1, maxLength: 4096 }
+      dependentRequired:
+        withdrawal_reason: [withdrawals]
+    CheckpointStatement:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0013 (P3-C) adds supersedes: the claim IDs of earlier claims of
+        the Task this statement is the new version of (including a fact that
+        completes an open item). It is not part of the Checkpoint record or
+        its digest; memproved records each item as a claim.superseded
+        Event. P3-D2: text holds at most 4096 characters.
+      required: [classification, text]
+      properties:
+        classification: { enum: [verified_fact, user_supplied_context, recommendation, unknown] }
+        text: { type: string, minLength: 1, maxLength: 4096 }
+        evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        supersedes: { type: array, items: { $ref: "#/components/schemas/ClaimId" }, uniqueItems: true }
+    CreateCapsuleRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, checkpoint_id]
+      properties:
+        schema_version: { const: 1 }
+        checkpoint_id: { $ref: "#/components/schemas/UuidV7" }
+    CapsuleSelection:
+      type: object
+      additionalProperties: false
+      required: [schema_version, capsule_id, checkpoint_id, reason]
+      properties:
+        schema_version: { const: 1 }
+        capsule_id: { $ref: "#/components/schemas/Sha256" }
+        checkpoint_id: { $ref: "#/components/schemas/UuidV7" }
+        reason: { enum: [latest_checkpoint_sequence, explicitly_requested] }
+    VerifyCapsuleRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+    CapsuleValidation:
+      type: object
+      additionalProperties: false
+      required: [schema_version, capsule_id, status, reasons, changed_paths, missing_object_ids, invalid_evidence_ids, required_checks]
+      properties:
+        schema_version: { const: 1 }
+        capsule_id: { $ref: "#/components/schemas/Sha256" }
+        status: { enum: [verified, stale, partial, tampered] }
+        reasons:
+          type: array
+          items: { enum: [head_changed, index_changed, worktree_changed, object_missing, object_digest_mismatch, ledger_chain_invalid, evidence_stale, evidence_unavailable, evidence_not_passed, project_mismatch, workspace_mismatch] }
+          uniqueItems: true
+        changed_paths: { type: array, items: { type: string, pattern: "^repo://" }, uniqueItems: true }
+        missing_object_ids: { type: array, items: { $ref: "#/components/schemas/Sha256" }, uniqueItems: true }
+        invalid_evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        required_checks: { type: array, items: { type: string, minLength: 1 } }
+    RecoveryPreview:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0012 D6. Statuses and reasons reuse CapsuleValidation (D4). The
+        human-readable summary a client prints is display only; this
+        document is the judgement. P2-C: command and test Evidence is
+        compared without the branch name, so the same commit, index, and
+        worktree are verified on any branch and in any worktree (bindings
+        still show both branches); the gap statement_without_evidence names
+        only verified_fact statements, the ones that propagate. P2-E:
+        verified needs Evidence that is both fresh and passed. P2-F: a
+        command or test that is still fresh but whose run_status is not PASS
+        is partial with evidence_not_passed; one that is not fresh keeps its
+        freshness verdict (stale, or partial with evidence_unavailable when
+        it cannot be confirmed). A verified_fact, in any section, whose
+        Evidence does not include a passed test with every cited test passed
+        is at best partial: evidence_not_passed when a fresh run that did not
+        pass explains it, otherwise evidence_unavailable. P3-C2 (ADR 0013,
+        D7 revised): the Preview applies the Task Capsule's Task-scope
+        integrity check; any record of the Task that is missing, does not
+        recompute, or disagrees with the ledger (any Checkpoint, Snapshot, or
+        Evidence of the Task, a Decision's Evidence, or the Task row against
+        its last Task Event) makes it tampered with the gap record_integrity,
+        even when the latest Checkpoint reads intact. A tampered Preview
+        holds no verified at any level: every fact and Evidence verdict is
+        tampered, with the document's integrity reasons added to its own,
+        and every Evidence object of a propagating fact is listed in
+        invalid_evidence_ids. P3-D3 (ADR 0013): a passed run whose command
+        (argv, element by element) ran again later in the same Task,
+        Workspace, and repository state (capture_manifest_digest) without
+        passing is judged as a run that did not pass: partial with
+        evidence_not_passed where it would be verified, with run_status
+        still PASS; a later passed run of that argv restores it. P3-L L2: a
+        passed test run is also judged so when the latest test run of its
+        argv in that state did not pass (for example a test with no case),
+        whatever command runs of the argv came after it; command runs are
+        judged as before. The Task Capsule, Task completion, and the
+        createCheckpoint write check apply the same rule. The Task-scope
+        integrity check also holds every Snapshot and Evidence object the
+        ledger announces on a Session of the Task to that Task and to the
+        Workspace of the announcing Event; a record moved elsewhere makes the
+        Preview tampered.
+      required: [schema_version, ontology_version, task_id, status, reasons, bindings, facts, invalid_evidence_ids, changed_paths, changed_paths_complete, gaps, next_checks, sessions, events_since_checkpoint, preview_digest]
+      properties:
+        schema_version: { const: 1 }
+        ontology_version: { type: string, minLength: 1 }
+        task_id: { $ref: "#/components/schemas/UuidV7" }
+        status: { $ref: "#/components/schemas/PreviewVerdict" }
+        reasons: { $ref: "#/components/schemas/PreviewReasons" }
+        bindings:
+          type: object
+          additionalProperties: false
+          required: [task, ledger, checkpoint, snapshot, probe]
+          properties:
+            task:
+              type: object
+              additionalProperties: false
+              required: [task_id, revision, status]
+              properties:
+                task_id: { $ref: "#/components/schemas/UuidV7" }
+                revision: { type: integer, minimum: 1 }
+                status: { $ref: "#/components/schemas/TaskState" }
+                workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+            ledger:
+              type: object
+              additionalProperties: false
+              required: [project_sequence, chain_valid]
+              properties:
+                project_sequence: { type: integer, minimum: 0 }
+                chain_valid: { type: boolean }
+            checkpoint:
+              oneOf:
+                - type: "null"
+                - type: object
+                  additionalProperties: false
+                  required: [checkpoint_id, digest, intact]
+                  properties:
+                    checkpoint_id: { $ref: "#/components/schemas/UuidV7" }
+                    digest: { oneOf: [{ $ref: "#/components/schemas/Sha256" }, { type: "null" }] }
+                    intact: { type: boolean }
+                    project_event_sequence: { type: integer, minimum: 0 }
+                    session_id: { $ref: "#/components/schemas/UuidV7" }
+                    objective: { type: string }
+                    created_at: { type: string, format: date-time }
+            snapshot:
+              oneOf:
+                - type: "null"
+                - type: object
+                  additionalProperties: false
+                  required: [snapshot_id, workspace_id, canonical_digest, capture_manifest_digest, head_oid, branch, is_dirty, captured_at]
+                  properties:
+                    snapshot_id: { $ref: "#/components/schemas/UuidV7" }
+                    workspace_id: { $ref: "#/components/schemas/UuidV7" }
+                    canonical_digest: { $ref: "#/components/schemas/Sha256" }
+                    capture_manifest_digest: { $ref: "#/components/schemas/Sha256" }
+                    head_oid: { type: string }
+                    branch: { type: [string, "null"] }
+                    is_dirty: { type: boolean }
+                    captured_at: { type: string, format: date-time }
+            probe:
+              type: object
+              additionalProperties: false
+              required: [workspace_id, available]
+              properties:
+                workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+                available: { type: boolean }
+                head_oid: { type: string }
+                branch: { type: [string, "null"] }
+                is_dirty: { type: boolean }
+                capture_manifest_digest: { $ref: "#/components/schemas/Sha256" }
+                same_repository: { type: boolean }
+                same_workspace: { type: boolean }
+        facts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [claim, classification, text, propagates, verdict, reasons, evidence]
+            properties:
+              claim:
+                type: object
+                additionalProperties: false
+                required: [checkpoint_id, section, ordinal]
+                properties:
+                  checkpoint_id: { $ref: "#/components/schemas/UuidV7" }
+                  section: { enum: [verified_completed_work, open_items, next_action] }
+                  ordinal: { type: integer, minimum: 0 }
+              classification: { enum: [verified_fact, user_supplied_context, recommendation, unknown] }
+              text: { type: string }
+              propagates: { type: boolean }
+              verdict: { $ref: "#/components/schemas/PreviewVerdict" }
+              reasons: { $ref: "#/components/schemas/PreviewReasons" }
+              evidence:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [evidence_id, kind, canonical_digest, run_status, argv, verdict, reasons]
+                  properties:
+                    evidence_id: { $ref: "#/components/schemas/UuidV7" }
+                    kind: { enum: [git_head, git_worktree, file_digest, command_result, test_result] }
+                    canonical_digest: { $ref: "#/components/schemas/Sha256" }
+                    run_status:
+                      description: >-
+                        P2-E: the FR-203 outcome of a command or test; null
+                        for repository Evidence and for a missing object.
+                      enum: [PASS, FAIL, NOT_RUN, UNAVAILABLE, null]
+                    argv:
+                      description: >-
+                        P2-F: the stored argv of a command or test; null for
+                        repository Evidence and for a missing object.
+                      oneOf:
+                        - type: "null"
+                        - { type: array, minItems: 1, items: { type: string } }
+                    verdict: { $ref: "#/components/schemas/PreviewVerdict" }
+                    reasons: { $ref: "#/components/schemas/PreviewReasons" }
+        invalid_evidence_ids: { type: array, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+        changed_paths: { type: array, items: { type: string, pattern: "^repo://" }, uniqueItems: true }
+        changed_paths_complete: { type: boolean }
+        gaps:
+          type: array
+          uniqueItems: true
+          items: { enum: [no_checkpoint, no_verified_fact, statement_without_evidence, record_integrity, ledger_chain_invalid, workspace_unavailable, workspace_identity, base_commit_unavailable, untracked_files_not_captured, sessions_truncated, events_truncated] }
+        next_checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [action, evidence_id, argv, workspace_id, at_head]
+            properties:
+              action: { enum: [rerun] }
+              evidence_id: { $ref: "#/components/schemas/UuidV7" }
+              argv: { type: array, minItems: 1, items: { type: string } }
+              workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+              at_head: { type: [string, "null"] }
+        sessions:
+          type: array
+          maxItems: 20
+          description: >-
+            P4-B (ADR 0014 E8): read as TaskCapsule.sessions reads them,
+            latest started_at first.
+          items:
+            type: object
+            additionalProperties: false
+            required: [session_id, workspace_id, started_at, ended_at]
+            properties:
+              session_id: { $ref: "#/components/schemas/UuidV7" }
+              workspace_id: { $ref: "#/components/schemas/UuidV7" }
+              started_at: { type: string, format: date-time }
+              ended_at: { type: [string, "null"], format: date-time }
+        events_since_checkpoint:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [project_sequence, event_type, occurred_at, recorded_at, producer]
+            properties:
+              project_sequence: { type: integer, minimum: 1 }
+              event_type: { type: string }
+              occurred_at: { type: [string, "null"], format: date-time }
+              recorded_at: { type: string, format: date-time }
+              producer:
+                type: object
+                additionalProperties: false
+                required: [name, version]
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+        preview_digest: { $ref: "#/components/schemas/Sha256" }
+    PreviewVerdict: { enum: [verified, stale, partial, tampered] }
+    PreviewReasons:
+      type: array
+      uniqueItems: true
+      items: { enum: [head_changed, index_changed, worktree_changed, object_missing, object_digest_mismatch, ledger_chain_invalid, evidence_stale, evidence_unavailable, evidence_not_passed, project_mismatch, workspace_mismatch] }
+    TaskCapsule:
+      type: object
+      additionalProperties: false
+      description: >-
+        ADR 0013 D4/D5. Verdicts and reasons reuse CapsuleValidation (ADR
+        0012 D4); statements are judged exactly as RecoveryPreview facts.
+        claims are numbered from 1 in ledger order; standing never changes
+        a verdict. continuation lists every claim exactly once, class
+        ascending (0 header, 1 integrity, 2 Sessions that did not end
+        normally, 3 open items, 4 facts not verified, 5 reruns, 6 verified
+        facts, 7 Decisions, 8 the current next_action, 9 superseded or
+        withdrawn claims), ledger order within a class; template and args
+        carry what a client renders, and a client writes verified only for
+        an item whose verdict is verified. omitted is always empty in v1.
+        P3-C2 (ADR 0013, D7 revised): a tampered Capsule holds no verified at
+        any level; every claim, Evidence verdict, rerun, and continuation
+        item is tampered, with the document's integrity reasons added to its
+        own, and no reaffirm item is listed. A supersedes edge from a claim
+        that is not a fact onto a fact is not applied. claim.superseded,
+        decision.recorded, and session.crashed are read only with
+        payload_schema <type>@1. A Decision's Evidence of another Task is
+        partial (evidence_unavailable), not damaged. P3-D2 (T13 N2, N9): a
+        Decision is judged by the Evidence rule of a verified_fact (verified
+        only when every cited object is readable, every cited test passed,
+        and one is a test; otherwise at best partial); every claim carries
+        withdrawal_reason, the reason of the first withdraws edge applied to
+        it (null when it is not withdrawn or the edge has none); the header
+        item's args carry withdrawn_facts, the number of withdrawn facts.
+        P3-D3: a passed run overruled by a later run of the same argv in the
+        same Task, Workspace, and repository state that did not pass is
+        partial with evidence_not_passed (as in RecoveryPreview) and is never
+        offered for reaffirmation; damaged_records also names every Snapshot
+        or Evidence object the ledger announces on a Session of the Task
+        whose row now belongs to another Task or Workspace
+        (object_digest_mismatch). Ontology v4 (ADR 0014, P4-D/F): actions
+        lists what can be done next, computed at read time by the functions
+        the writes check with; sessions[].resumed_from is the Pack a
+        Session declared it continues from.
+      required: [schema_version, ontology_version, task, status, reasons, bindings, sessions, claims, rerun, changed_paths_by_base, gaps, damaged_records, continuation, omitted, capsule_digest, actions]
+      properties:
+        schema_version: { const: 1 }
+        ontology_version: { type: string, minLength: 1 }
+        task:
+          type: object
+          additionalProperties: false
+          description: >-
+            P4-B (ADR 0014 E8): title and workspace_id are read from the
+            Task's task.created Event of memproved (the row's for a Task
+            without one); status and revision are the row's, which the
+            integrity check compares with the Task's last Task Event.
+          required: [task_id, title, revision, status, workspace_id]
+          properties:
+            task_id: { $ref: "#/components/schemas/UuidV7" }
+            title: { type: string }
+            revision: { type: integer, minimum: 1 }
+            status: { $ref: "#/components/schemas/TaskState" }
+            workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        status: { $ref: "#/components/schemas/PreviewVerdict" }
+        reasons: { $ref: "#/components/schemas/PreviewReasons" }
+        bindings:
+          type: object
+          additionalProperties: false
+          required: [ledger, probe]
+          properties:
+            ledger:
+              type: object
+              additionalProperties: false
+              required: [project_sequence, chain_valid]
+              properties:
+                project_sequence: { type: integer, minimum: 0 }
+                chain_valid: { type: boolean }
+            probe: { $ref: "#/components/schemas/ProbeBinding" }
+        sessions:
+          type: array
+          description: >-
+            P4-B (ADR 0014 E8): workspace_id and started_at are those of the
+            Session's session.started Event of memproved, ended_at the
+            recorded_at of its first session.ended or session.crashed Event
+            (null without one); a Session without session.started keeps its
+            row. Ordered by started_at, then session_id.
+          items:
+            type: object
+            additionalProperties: false
+            required: [session_id, workspace_id, started_at, ended_at, end_state, last_recorded_at, resumed_from]
+            properties:
+              session_id: { $ref: "#/components/schemas/UuidV7" }
+              workspace_id: { $ref: "#/components/schemas/UuidV7" }
+              started_at: { type: string, format: date-time }
+              ended_at: { type: [string, "null"], format: date-time }
+              end_state: { enum: [open, ended, crashed] }
+              last_recorded_at:
+                description: >-
+                  P3-L L7: the recorded_at of the Session's latest Event in
+                  the ledger at the Capsule's project_sequence (UTC, from the
+                  ledger, not the clock), null when the ledger holds no Event
+                  of the Session.
+                type: [string, "null"]
+                format: date-time
+              resumed_from:
+                description: >-
+                  ADR 0014 E6 (P4-F): from the Session's capsule.recovered@1
+                  Event of memproved, null without one. declared is always
+                  true: the digests are the Session's own report.
+                oneOf:
+                  - type: "null"
+                  - type: object
+                    additionalProperties: false
+                    required: [capsule_digest, project_sequence, pack_digest, budget, declared]
+                    properties:
+                      capsule_digest: { $ref: "#/components/schemas/Sha256" }
+                      project_sequence: { type: integer, minimum: 0 }
+                      pack_digest: { $ref: "#/components/schemas/Sha256" }
+                      budget: { type: integer, minimum: 1000, maximum: 1000000 }
+                      declared: { const: true }
+              agent:
+                description: >-
+                  U8 A2 (Owner O4): the agent the Session declared at
+                  createSession, from its session.started@3 Event of
+                  memproved; absent for a Session that declared none, so
+                  the Capsule of such Sessions and its capsule_digest are
+                  unchanged. parent_session_id is null when the agent names
+                  none.
+                type: object
+                additionalProperties: false
+                required: [name, role, parent_session_id]
+                properties:
+                  name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+                  role: { enum: [orchestrator, sub_agent, human] }
+                  parent_session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+              ended_by:
+                description: >-
+                  U9 A7 (Owner O3): who ended the Session as abandoned, from
+                  its session.crashed@2 Event of memproved; absent for a
+                  Session without one (every Session before U9), so the
+                  Capsule of such Sessions and its capsule_digest are
+                  unchanged. session_id and agent are each absent when the
+                  ender did not report it; agent is as above.
+                type: object
+                additionalProperties: false
+                minProperties: 1
+                properties:
+                  session_id: { $ref: "#/components/schemas/UuidV7" }
+                  agent:
+                    type: object
+                    additionalProperties: false
+                    required: [name, role, parent_session_id]
+                    properties:
+                      name: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+                      role: { enum: [orchestrator, sub_agent, human] }
+                      parent_session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        claims:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [number, claim_id, kind, classification, text, rationale, session_id, checkpoint_id, project_sequence, standing, withdrawal_reason, superseded_by, propagates, damaged, verdict, reasons, evidence, grounding_digest]
+            properties:
+              number: { type: integer, minimum: 1 }
+              claim_id: { $ref: "#/components/schemas/ClaimId" }
+              kind: { enum: [fact, open_item, next_action, decision] }
+              classification: { enum: [verified_fact, user_supplied_context, recommendation, unknown, null] }
+              text: { type: string, minLength: 1 }
+              rationale: { type: [string, "null"] }
+              session_id: { $ref: "#/components/schemas/UuidV7" }
+              checkpoint_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+              project_sequence: { type: integer, minimum: 1 }
+              standing: { enum: [active, superseded, withdrawn] }
+              withdrawal_reason: { oneOf: [{ type: string, minLength: 1 }, { type: "null" }] }
+              withdrawn_by:
+                description: >-
+                  U8 A6 (Owner O4): only on a withdrawn claim, so the Capsule
+                  of a Task without a withdrawal and its capsule_digest are
+                  unchanged: the Checkpoint whose withdraws edge (the first
+                  one applied) withdrew it and that Checkpoint's Session;
+                  null when no readable Checkpoint recorded the edge.
+                oneOf:
+                  - type: "null"
+                  - type: object
+                    additionalProperties: false
+                    required: [checkpoint_id, session_id]
+                    properties:
+                      checkpoint_id: { $ref: "#/components/schemas/UuidV7" }
+                      session_id: { $ref: "#/components/schemas/UuidV7" }
+              superseded_by:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [number, claim_id]
+                  properties:
+                    number: { type: integer, minimum: 1 }
+                    claim_id: { $ref: "#/components/schemas/ClaimId" }
+              propagates: { type: boolean }
+              damaged: { type: boolean }
+              verdict: { $ref: "#/components/schemas/PreviewVerdict" }
+              reasons: { $ref: "#/components/schemas/PreviewReasons" }
+              evidence:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [evidence_id, kind, canonical_digest, run_status, argv, snapshot_id, base_commit, verdict, reasons]
+                  properties:
+                    evidence_id: { $ref: "#/components/schemas/UuidV7" }
+                    kind: { enum: [git_head, git_worktree, file_digest, command_result, test_result, null] }
+                    canonical_digest: { oneOf: [{ $ref: "#/components/schemas/Sha256" }, { type: "null" }] }
+                    run_status: { enum: [PASS, FAIL, NOT_RUN, UNAVAILABLE, null] }
+                    argv:
+                      oneOf:
+                        - type: "null"
+                        - { type: array, minItems: 1, items: { type: string } }
+                    test_format:
+                      description: >-
+                        U9 K2: present only on a test_result recorded with
+                        metadata.test_format.
+                      enum: [cargo, pytest, cases]
+                    snapshot_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+                    base_commit: { type: [string, "null"] }
+                    verdict: { $ref: "#/components/schemas/PreviewVerdict" }
+                    reasons: { $ref: "#/components/schemas/PreviewReasons" }
+              grounding_digest: { $ref: "#/components/schemas/Sha256" }
+        rerun:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [argv, evidence_ids, claims, verdict, reasons, workspace_id, at_head]
+            properties:
+              argv: { type: array, minItems: 1, items: { type: string } }
+              evidence_ids: { type: array, minItems: 1, items: { $ref: "#/components/schemas/UuidV7" }, uniqueItems: true }
+              claims: { type: array, minItems: 1, items: { type: integer, minimum: 1 }, uniqueItems: true }
+              verdict: { $ref: "#/components/schemas/PreviewVerdict" }
+              reasons: { $ref: "#/components/schemas/PreviewReasons" }
+              workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+              at_head: { type: [string, "null"] }
+        changed_paths_by_base:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [base_commit, probed, complete, paths]
+            properties:
+              base_commit: { type: string, minLength: 1 }
+              probed: { type: boolean }
+              complete: { type: boolean }
+              paths: { type: array, items: { type: string, pattern: "^repo://" }, uniqueItems: true }
+        gaps:
+          type: array
+          uniqueItems: true
+          items: { enum: [no_checkpoint, no_verified_fact, statement_without_evidence, record_integrity, ledger_chain_invalid, workspace_unavailable, workspace_identity, base_commit_unavailable, untracked_files_not_captured, base_commits_over_limit] }
+        damaged_records:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [record_type, record_id, reason]
+            properties:
+              record_type:
+                description: >-
+                  session (P4-C2, ontology v4): a Session of the Task whose
+                  sessions row or task_sessions row is missing, does not
+                  decode, or disagrees with the Event chain; record_id is the
+                  session_id. verifyLedger does not report it. U1 B1: a
+                  sessions row disagrees when its started_at, agent_id, or
+                  workspace_id is not what its session.started Event
+                  recorded, and a task_sessions row when its linked_at is not
+                  the recorded_at of the link's task.session_linked Event.
+                enum: [event, evidence, snapshot, checkpoint, task, session]
+              record_id: { type: string, minLength: 1 }
+              reason: { enum: [object_missing, object_digest_mismatch] }
+        continuation:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ContinuationItem" }
+        omitted: { type: array, maxItems: 0 }
+        capsule_digest: { $ref: "#/components/schemas/Sha256" }
+        actions:
+          description: >-
+            ADR 0014 E3 as implemented (P4-D; Owner decisions A1, B3, C1).
+            Exactly three items, in this order: complete_task
+            (transitionTask to completed citing the Task's passed runs that
+            are verified now; refused while the Task is tampered),
+            begin_session (createSession with the Task's task_id), and
+            cite_latest_run (createCheckpoint with a verified_fact citing
+            the Task's latest run on the Snapshot that first sealed it).
+            Each is computed at read time by the same function the write
+            checks with: available means that, under the same ledger and the
+            same probe result, the write is not refused by those checks;
+            otherwise reasons lists the Problem codes it is refused with, in
+            check order (the write returns the first). Checks of the
+            caller's own context are not covered: the revision it sends, its
+            Session (active, continuing the Task, in the Snapshot's
+            Workspace), and idempotency. P4-H1 (T20 N-1): when the Task
+            takes no new Session (completed or cancelled) and every Session
+            of it has ended, no Session can write a Checkpoint for it, so
+            cite_latest_run is unavailable with invalid_transition, listed
+            after invalid_request when that applies too (the write appends
+            its Event, which an ended Session refuses, after its 400
+            checks). actions do not depend on the caller's token; scope
+            names what the write needs. There is no
+            reaffirm action: createCheckpoint does not judge freshness when
+            it writes (continuation class 5 says which facts need a rerun).
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/TaskAction" }
+    TaskAction:
+      description: >-
+        One action of a TaskCapsule. args by action: complete_task
+        {operation: transitionTask, target_state: completed,
+        expected_revision, completion_evidence_ids, workspace_id};
+        begin_session {operation: createSession, task_id, workspace_id,
+        task_status, open_session_ids}; cite_latest_run {operation:
+        createCheckpoint, evidence_id, snapshot_id, workspace_id, kind,
+        run_status, argv, overruled_by[, test_format]}, all but operation
+        null when the Task has no run.
+      type: object
+      additionalProperties: false
+      required: [action, available, reasons, scope, args]
+      properties:
+        action: { enum: [complete_task, begin_session, cite_latest_run] }
+        available: { type: boolean }
+        reasons:
+          type: array
+          uniqueItems: true
+          items: { enum: [invalid_request, project_workspace_mismatch, invalid_transition, evidence_stale] }
+        scope: { const: mcp-write }
+        args:
+          type: object
+          additionalProperties: false
+          properties:
+            operation: { enum: [transitionTask, createSession, createCheckpoint] }
+            target_state: { const: completed }
+            expected_revision: { type: integer, minimum: 1 }
+            completion_evidence_ids: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/UuidV7" } }
+            workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+            task_id: { $ref: "#/components/schemas/UuidV7" }
+            task_status: { $ref: "#/components/schemas/TaskState" }
+            open_session_ids: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/UuidV7" } }
+            evidence_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+            snapshot_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+            kind: { enum: [command_result, test_result, null] }
+            run_status: { enum: [PASS, FAIL, NOT_RUN, UNAVAILABLE, null] }
+            argv:
+              oneOf:
+                - type: "null"
+                - { type: array, minItems: 1, items: { type: string } }
+            test_format:
+              description: >-
+                U9 K2: cite_latest_run only, and only when the latest run is a
+                test_result recorded with metadata.test_format.
+              enum: [cargo, pytest, cases]
+            overruled_by: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+    ClaimId:
+      description: >-
+        ADR 0013 D1: <checkpoint_id>/<section>/<ordinal> for a statement,
+        decision/<event_id> for a Decision.
+      type: string
+      pattern: "^(decision/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(verified_completed_work|open_items|next_action)/(0|[1-9][0-9]*))$"
+    ProbeBinding:
+      type: object
+      additionalProperties: false
+      required: [workspace_id, available]
+      properties:
+        workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        available: { type: boolean }
+        head_oid: { type: string }
+        branch: { type: [string, "null"] }
+        is_dirty: { type: boolean }
+        capture_manifest_digest: { $ref: "#/components/schemas/Sha256" }
+        same_repository: { type: boolean }
+        same_workspace: { type: boolean }
+    ContinuationItem:
+      description: >-
+        ADR 0013 D5. args by template: header {title, task_status,
+        project_sequence, head_oid, withdrawn_facts}; ledger_chain_invalid {};
+        damaged_record {record_type}; session_open and session_crashed
+        {workspace_id, started_at}; open_item and next_action {number,
+        text}; fact {number, text, base_commits, head_oid}; rerun {argv,
+        evidence_ids, numbers, workspace_id, head_oid}; reaffirm {argv,
+        evidence_ids, numbers, verified_evidence_id, verified_snapshot_id};
+        decision {number, text, rationale}; superseded {number, text,
+        superseded_by}; withdrawn {number, text, superseded_by,
+        withdrawal_reason}. withdrawn_facts and withdrawal_reason are P3-D2.
+      type: object
+      additionalProperties: false
+      required: [class, template, object_id, session_id, verdict, reasons, standing, args]
+      properties:
+        class: { type: integer, minimum: 0, maximum: 9 }
+        template: { enum: [header, ledger_chain_invalid, damaged_record, session_open, session_crashed, open_item, fact, rerun, reaffirm, decision, next_action, superseded, withdrawn] }
+        object_id: { type: string, minLength: 1 }
+        session_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        verdict: { oneOf: [{ $ref: "#/components/schemas/PreviewVerdict" }, { type: "null" }] }
+        reasons: { $ref: "#/components/schemas/PreviewReasons" }
+        standing: { enum: [active, superseded, withdrawn, null] }
+        args:
+          type: object
+          additionalProperties: false
+          properties:
+            title: { type: string }
+            task_status: { $ref: "#/components/schemas/TaskState" }
+            project_sequence: { type: integer, minimum: 0 }
+            head_oid: { type: [string, "null"] }
+            record_type: { enum: [event, evidence, snapshot, checkpoint, task, session] }
+            workspace_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+            started_at: { type: string, format: date-time }
+            number: { type: integer, minimum: 1 }
+            text: { type: string, minLength: 1 }
+            base_commits: { type: array, items: { type: string, minLength: 1 } }
+            argv: { type: array, minItems: 1, items: { type: string } }
+            evidence_ids: { type: array, minItems: 1, items: { $ref: "#/components/schemas/UuidV7" } }
+            numbers: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+            verified_evidence_id: { $ref: "#/components/schemas/UuidV7" }
+            verified_snapshot_id: { $ref: "#/components/schemas/UuidV7" }
+            rationale: { type: [string, "null"] }
+            superseded_by: { type: array, items: { type: integer, minimum: 1 } }
+            withdrawn_facts: { type: integer, minimum: 0 }
+            withdrawal_reason: { oneOf: [{ type: string, minLength: 1 }, { type: "null" }] }
+    CreateContextPackRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, workspace_id, objective, token_budget, freshness_policy, renderer]
+      properties:
+        schema_version: { const: 1 }
+        workspace_id: { $ref: "#/components/schemas/UuidV7" }
+        task_id: { oneOf: [{ $ref: "#/components/schemas/UuidV7" }, { type: "null" }] }
+        objective: { type: string, minLength: 1 }
+        token_budget: { type: integer, minimum: 1 }
+        freshness_policy: { enum: [current_only, include_stale_marked] }
+        renderer: { enum: [codex, claude, cursor, markdown, json] }
+    Resource:
+      type: object
+      additionalProperties: true
+      required: [schema_version, id, revision]
+      properties:
+        schema_version: { const: 1 }
+        id: { $ref: "#/components/schemas/UuidV7" }
+        revision: { type: integer, minimum: 1 }
+    Page:
+      type: object
+      additionalProperties: false
+      required: [schema_version, snapshot_sequence, items]
+      properties:
+        schema_version: { const: 1 }
+        snapshot_sequence: { type: integer, minimum: 0 }
+        items: { type: array, items: { type: object } }
+        next_cursor: { type: [string, "null"] }

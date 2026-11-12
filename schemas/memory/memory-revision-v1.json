@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://continuity.local/schemas/memory/memory-revision-v1.json",
+  "title": "Continuity Memory Revision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "item_id",
+    "revision_id",
+    "project_id",
+    "kind",
+    "content",
+    "lifecycle",
+    "support",
+    "freshness",
+    "derived",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "item_id": { "$ref": "../common/definitions-v1.json#/$defs/uuidv7" },
+    "revision_id": { "$ref": "../common/definitions-v1.json#/$defs/uuidv7" },
+    "project_id": { "$ref": "../common/definitions-v1.json#/$defs/uuidv7" },
+    "workspace_id": {
+      "oneOf": [
+        { "$ref": "../common/definitions-v1.json#/$defs/uuidv7" },
+        { "type": "null" }
+      ]
+    },
+    "kind": {
+      "enum": ["observation", "fact", "hypothesis", "decision", "plan"]
+    },
+    "key": { "type": ["string", "null"], "minLength": 1 },
+    "content": { "type": "string", "minLength": 1 },
+    "lifecycle": { "$ref": "../common/definitions-v1.json#/$defs/lifecycle" },
+    "support": { "$ref": "../common/definitions-v1.json#/$defs/support" },
+    "freshness": { "$ref": "../common/definitions-v1.json#/$defs/freshness" },
+    "derived": { "type": "boolean" },
+    "valid_from": {
+      "oneOf": [
+        { "$ref": "../common/definitions-v1.json#/$defs/rfc3339Utc" },
+        { "type": "null" }
+      ]
+    },
+    "valid_to": {
+      "oneOf": [
+        { "$ref": "../common/definitions-v1.json#/$defs/rfc3339Utc" },
+        { "type": "null" }
+      ]
+    },
+    "recorded_at": { "$ref": "../common/definitions-v1.json#/$defs/rfc3339Utc" },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "$ref": "../common/definitions-v1.json#/$defs/uuidv7" },
+      "uniqueItems": true
+    },
+    "extension_metadata": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]+/[a-zA-Z0-9_.-]+$" }
+    }
+  }
+}
