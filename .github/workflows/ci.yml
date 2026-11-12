@@ -70,4 +70,4 @@ jobs:
         run: cargo clippy --offline --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --offline --workspace
+        run: cargo test --offline --no-fail-fast --workspace

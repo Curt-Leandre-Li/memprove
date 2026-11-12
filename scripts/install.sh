@@ -554,6 +554,20 @@ upgrade() {
     old_daemon="$old_daemon.$stamp"
   fi
   backup_dir="$prefix/backups/$stamp-$old_build"
+  # U22: two upgrades within one second (a fast machine, a script that
+  # upgrades twice) would otherwise share the names above; the later one
+  # takes the first free -2, -3, ... instead.
+  local free=2 base_backup="$backup_dir" base_cli="$old_cli" base_daemon="$old_daemon"
+  while [ -e "$backup_dir" ]; do
+    backup_dir="$base_backup-$free"
+    free=$((free + 1))
+  done
+  free=2
+  while [ -e "$old_cli" ] || [ -e "$old_daemon" ]; do
+    old_cli="$base_cli-$free"
+    old_daemon="$base_daemon-$free"
+    free=$((free + 1))
+  done
   say "Upgrading memprove in $prefix: build $old_build -> $new_build"
 
   # Stage the new binaries next to the old ones; nothing changes yet.

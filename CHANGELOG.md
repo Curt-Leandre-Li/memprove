@@ -16,6 +16,9 @@ repository publishable.
   `permissions.allow` rules only when asked, and otherwise prints them;
   it also replaces what it wrote under the previous name (the `AGENTS.md`
   note, the Codex table, an unedited `.cursor/rules/continuity.mdc`).
+- `scripts/install.sh` gives an upgrade within the same second as the one
+  before it a free backup directory and free names for the old binaries
+  (`-2`, `-3`, ...) instead of failing on a backup directory that exists.
 - `TAKEOVER_EVAL_PROTECT` for the takeover evaluation: more directories
   (such as a second installation) that its safety checks guard, besides
   `~/.memprove` and `~/.config/memprove`.
