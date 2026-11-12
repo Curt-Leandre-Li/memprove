@@ -12,6 +12,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # rust-toolchain.toml names the channel `stable`, which rustup would update
+  # to the latest release on the runner; this keeps every cargo call on the
+  # pinned version the next step installs.
+  RUSTUP_TOOLCHAIN: 1.96.0
 
 jobs:
   check:
@@ -32,6 +36,9 @@ jobs:
         with:
           toolchain: 1.96.0
           components: rustfmt, clippy
+
+      - name: Show the toolchain
+        run: rustc --version && cargo --version && cargo clippy --version
 
       - name: Install libclang (Ubuntu)
         if: runner.os == 'Linux'
