@@ -1715,9 +1715,7 @@ impl MathematicalInteger {
         let (mantissa, exponent) = exponent_index.map_or((unsigned, None), |index| {
             (&unsigned[..index], Some(&unsigned[index + 1..]))
         });
-        let (whole, fraction) = mantissa
-            .split_once('.')
-            .map_or((mantissa, ""), |parts| parts);
+        let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
         if whole.is_empty()
             || !whole.bytes().all(|byte| byte.is_ascii_digit())
             || whole.len() > 1 && whole.starts_with('0')
