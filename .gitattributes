@@ -1,2 +1,4 @@
 # Preserve the owner-approved v2.1 PRD bytes, including intentional Markdown hard breaks.
 docs/baselines/memprove-local-first-v1-prd.md whitespace=-blank-at-eol
+# Hidden check patches are applied byte for byte; whitespace fixes would break them.
+evals/*.patch -whitespace

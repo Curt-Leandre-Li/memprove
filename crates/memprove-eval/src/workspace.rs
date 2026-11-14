@@ -90,6 +90,31 @@ impl Worktree {
         .map(|_| ())
     }
 
+    /// Puts every path `patch` touches back as it is at `base` (a path
+    /// `base` does not have is deleted), then applies `patch`: the check
+    /// patch's files replace the agent's versions of them, so an agent that
+    /// added its own tests to the same file does not make the patch
+    /// conflict. The agent's other changes stay.
+    ///
+    /// # Errors
+    /// [`EvalError::Git`] when `git` fails or the patch does not apply.
+    pub fn restore_and_apply(&self, base: &str, patch: &Path) -> Result<(), EvalError> {
+        let file = patch.to_string_lossy().into_owned();
+        let listing = git(&self.path, &["apply", "--numstat", "-z", &file])?;
+        for path in touched(&listing) {
+            let at_base = format!("{base}:{path}");
+            if git(&self.path, &["cat-file", "-e", &at_base]).is_ok() {
+                git(&self.path, &["checkout", base, "--", path])?;
+            } else {
+                let full = self.path.join(path);
+                if fs::symlink_metadata(&full).is_ok() {
+                    fs::remove_file(&full).map_err(|error| EvalError::io(&full, error))?;
+                }
+            }
+        }
+        self.apply(patch)
+    }
+
     /// Removes the worktree and its administrative files.
     ///
     /// # Errors
@@ -98,6 +123,27 @@ impl Worktree {
         let target = self.path.to_string_lossy().into_owned();
         git(&self.repo_root, &["worktree", "remove", "--force", &target]).map(|_| ())
     }
+}
+
+/// The paths in `git apply --numstat -z` output: `added\tdeleted\tpath\0`,
+/// or `added\tdeleted\t\0old\0new\0` for a rename or copy (both paths
+/// listed).
+fn touched(listing: &str) -> Vec<&str> {
+    let mut paths = Vec::new();
+    let mut fields = listing.split('\0');
+    while let Some(entry) = fields.next() {
+        let Some(path) = entry.splitn(3, '\t').nth(2) else {
+            continue;
+        };
+        if path.is_empty() {
+            paths.extend(fields.next());
+            paths.extend(fields.next());
+        } else {
+            paths.push(path);
+        }
+    }
+    paths.retain(|path| !path.is_empty());
+    paths
 }
 
 #[cfg(test)]
@@ -147,5 +193,45 @@ mod tests {
         let path = tree.path().to_path_buf();
         tree.remove().expect("removed");
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn the_check_patch_replaces_the_agents_versions_of_its_files() {
+        let repo = repo();
+        let base = crate::git::commit(repo.path(), "HEAD").expect("head");
+        let parent = repo.path().join(".git").join("u23-test");
+        let tree = Worktree::create(repo.path(), &parent, "t2", &base).expect("worktree");
+        fs::write(tree.path().join("a.txt"), "agent\n").expect("edit");
+        fs::write(tree.path().join("c.txt"), "agent\n").expect("new file");
+        fs::write(tree.path().join("d.txt"), "kept\n").expect("other file");
+        tree.diff(&base, &repo.path().join("agent.diff"))
+            .expect("diff");
+        let check = repo.path().join("check.patch");
+        fs::write(
+            &check,
+            "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+checked\n\
+             diff --git a/c.txt b/c.txt\nnew file mode 100644\n--- /dev/null\n+++ b/c.txt\n@@ -0,0 +1 @@\n+check\n",
+        )
+        .expect("patch");
+        assert!(tree.apply(&check).is_err(), "it conflicts with the agent");
+        tree.restore_and_apply(&base, &check).expect("applies");
+        let read = |name: &str| fs::read_to_string(tree.path().join(name)).expect("read");
+        assert_eq!(read("a.txt"), "checked\n");
+        assert_eq!(read("c.txt"), "check\n");
+        assert_eq!(read("d.txt"), "kept\n");
+        tree.remove().expect("removed");
+    }
+
+    #[test]
+    fn touched_lists_both_sides_of_a_rename() {
+        assert_eq!(
+            touched("1\t0\ta.txt\0-\t-\tbin.png\0"),
+            ["a.txt", "bin.png"]
+        );
+        assert_eq!(
+            touched(concat!("0\t0\t\0old.rs\0new.rs\0", "2\t1\tc.rs\0")),
+            ["old.rs", "new.rs", "c.rs"]
+        );
+        assert!(touched("").is_empty());
     }
 }
