@@ -7,6 +7,14 @@ https://github.com/memprove/memprove/releases.
 
 ### Added
 
+- `memprove eval` (crate `memprove-eval`): runs a coding agent on the
+  repository's own tasks (`evals/*.json`, schema
+  `memprove.eval.task.v1`), each trial in a detached Git worktree at the
+  task's base commit, and judges it by the check command's exit code
+  alone, with an optional check patch applied after the agent. Writes
+  `run.json` and every log under `<git common dir>/memprove-eval/runs/`;
+  its last line is a cargo-style summary, so `memprove run --test-format
+  cargo` records a run as test Evidence.
 - `.github/workflows/release.yml`: for a tag `v*` (or by hand for an
   existing tag) it builds the release binaries for Linux x86_64 (on
   Ubuntu 22.04) and macOS arm64, installs each archive once and runs

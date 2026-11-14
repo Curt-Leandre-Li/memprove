@@ -29,6 +29,17 @@ pub mod task;
 pub mod time;
 pub mod workspace;
 
+/// `bytes` as lowercase hex.
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut text, byte| {
+            write!(text, "{byte:02x}").expect("writing to a String cannot fail");
+            text
+        })
+}
+
 pub use agent::{Agent, AgentRequest, agent_for};
 pub use baseline::{Baseline, BaselineTask};
 pub use error::EvalError;

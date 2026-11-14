@@ -599,6 +599,16 @@ record does not hold; exit `1` means the daemon refused the request, so a script
 chain tail or a whole-chain recomputation by the same OS user; an external anchor for the chain head is not part of
 this version.
 
+## Evaluating an agent setup (`memprove eval`)
+
+`memprove eval` checks whether an agent setup (model, prompt, `CLAUDE.md`, memory) still does this repository's
+real work. A task file under `evals/` names a base commit, a prompt, an optional setup, a check command and an
+optional check patch (tests applied after the agent, so it never sees them); `memprove eval run` gives each task to
+the agent in its own Git worktree and judges it by the check's exit code alone. `memprove eval init` writes a first
+task, a CI workflow and a short note for agents; `memprove eval mine` turns commits that changed tests and code into
+tasks. Record a run as test Evidence with `memprove run --test-format cargo -- memprove eval run evals/`: its last
+line counts one case per trial. `memprove eval --help` lists the commands; `docs/eval.md` is the manual.
+
 ## Known limits
 
 - The case count of a run comes from the command's output text (`cargo test` result lines, pytest's summary or

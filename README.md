@@ -117,6 +117,17 @@ another agent's facts; the orchestrating session or a person does that. The
 takeover evaluation (`docs/takeover-eval.md`) runs a real client through
 six scenarios and scores the archive.
 
+## Evaluating your agent
+
+`memprove eval` gives a coding agent (Claude Code, Codex, or any program)
+this repository's own tasks, each in a Git worktree of its own at a base
+commit, and judges each only by the exit code of its check command, with
+hidden tests applied after the agent. Runs are compared with a baseline
+committed under `evals/`, and `memprove eval gate` fails CI when a change
+of model, prompt or memory makes the agent worse. `memprove eval init`
+sets a repository up and `memprove eval mine` writes tasks from its
+history; `docs/eval.md` has the rest.
+
 ## Status
 
 memprove 0.1.0, the first release, came out on 2026-11-14

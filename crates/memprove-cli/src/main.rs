@@ -51,9 +51,32 @@ fn before_the_parser(args: &[std::ffi::OsString]) -> Option<ExitCode> {
     Some(ExitCode::SUCCESS)
 }
 
+/// U23: `memprove eval ...` is parsed and run by the `memprove-eval` crate,
+/// which reads no token and calls no daemon itself; the CLI gives it the
+/// memory memprove would give an agent (read-only). `None` for every other
+/// command.
+fn eval(args: &[std::ffi::OsString]) -> Option<ExitCode> {
+    let (first, rest) = args.split_first()?;
+    if first != "eval" {
+        return None;
+    }
+    let words: Vec<String> = rest
+        .iter()
+        .map(|word| word.to_string_lossy().into_owned())
+        .collect();
+    let memory = memprove_cli::eval_memory::DaemonMemory;
+    Some(ExitCode::from(memprove_eval::cli::main(
+        &words,
+        Some(&memory),
+    )))
+}
+
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(code) = before_the_parser(&args) {
+        return code;
+    }
+    if let Some(code) = eval(&args) {
         return code;
     }
     // P4-G (ADR 0014 E7.3): an `mcp` command reads no context and warns
