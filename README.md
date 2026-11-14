@@ -33,8 +33,12 @@ it.
 
 ## Install in two steps
 
-1. Build and install (macOS with Homebrew LLVM; on Ubuntu install
-   `libclang-dev` and skip the two exports):
+1. Install. Release binaries for macOS on Apple silicon and Linux x86_64
+   (glibc 2.35 or later) are on the
+   [releases page](https://github.com/memprove/memprove/releases), with
+   the commands that verify and install them; https://memprove.dev/docs/
+   has them too. To build from source instead (macOS with Homebrew LLVM;
+   on Ubuntu install `libclang-dev` and skip the two exports):
 
    ```bash
    export LIBCLANG_PATH=/opt/homebrew/opt/llvm/lib
@@ -115,10 +119,12 @@ six scenarios and scores the archive.
 
 ## Status
 
-memprove is under active development and not yet published as a release.
-The ledger format, the control API (`openapi/control-api-v1.yaml`) and the
-Pack's line set are stable; the daemon has no network access by design.
-`docs/architecture.md` says how it is built.
+memprove 0.1.0, the first release, came out on 2026-11-14
+([release notes and binaries](https://github.com/memprove/memprove/releases/tag/v0.1.0)).
+It is under active development. The ledger format, the control API
+(`openapi/control-api-v1.yaml`) and the Pack's line set are stable; the
+daemon has no network access by design. Linux on arm64 is not supported
+yet. `docs/architecture.md` says how it is built.
 
 ## Licence
 

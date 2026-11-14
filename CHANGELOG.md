@@ -1,9 +1,21 @@
 # Changelog
 
-memprove is not released yet; this file starts with the work that made the
-repository publishable.
+Each release, with its binaries, is on
+https://github.com/memprove/memprove/releases.
 
 ## Unreleased
+
+### Added
+
+- `.github/workflows/release.yml`: for a tag `v*` (or by hand for an
+  existing tag) it builds the release binaries for Linux x86_64 (on
+  Ubuntu 22.04) and macOS arm64, installs each archive once and runs
+  `doctor`, and attaches the archives with their SHA-256 to the tag's
+  GitHub Release. Linux arm64 is left out until memproved starts there.
+
+## 0.1.0 · 2026-11-14
+
+The first release: the work that made the repository publishable.
 
 ### Added
 
@@ -25,11 +37,6 @@ repository publishable.
 - `scripts/install.sh` gives an upgrade within the same second as the one
   before it a free backup directory and free names for the old binaries
   (`-2`, `-3`, ...) instead of failing on a backup directory that exists.
-- `.github/workflows/release.yml`: for a tag `v*` (or by hand for an
-  existing tag) it builds the release binaries for Linux x86_64 and
-  aarch64 (on Ubuntu 22.04) and macOS arm64, installs each archive once
-  and runs `doctor`, and attaches the archives with their SHA-256 to the
-  tag's GitHub Release.
 - `TAKEOVER_EVAL_PROTECT` for the takeover evaluation: more directories
   (such as a second installation) that its safety checks guard, besides
   `~/.memprove` and `~/.config/memprove`.

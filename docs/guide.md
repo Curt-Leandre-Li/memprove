@@ -140,6 +140,8 @@ probe sees: the facts recorded before it read `stale` (`worktree_changed`), no r
 is `unconfirmed` (`evidence_unavailable`, with the gap `untracked_files_not_captured`), and `task complete` answers
 `409 evidence_stale`. `git rev-parse --git-path info/exclude` names the repository's own exclude file, never
 committed, which holds for every linked worktree. Leave `.mcp.json` out of the list when the project commits it.
+The same holds for what a test run leaves behind, such as Python's `__pycache__/`: while `git status --short` lists an
+untracked file, every fact on a run is `unconfirmed`, so list such files in `.gitignore` or in the exclude file.
 `AGENTS.md` and `.cursor/rules/memprove.mdc` are not excluded: the note is repository content and is committed.
 
 ## Unattended takeover
