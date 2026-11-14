@@ -1,0 +1,81 @@
+diff --git a/crates/memprove-cli/tests/u1e_install_e2e.rs b/crates/memprove-cli/tests/u1e_install_e2e.rs
+index 455760a..85a8202 100644
+--- a/crates/memprove-cli/tests/u1e_install_e2e.rs
++++ b/crates/memprove-cli/tests/u1e_install_e2e.rs
+@@ -1330,3 +1330,76 @@ fn u20_n2_a_running_daemon_of_the_previous_name_runs_again_after_the_rename() {
+     assert!(!setup.bin("continuityd").exists());
+     assert_eq!(setup.ledger(&project), before);
+ }
++
++/// `seconds` since the Unix epoch as `install.sh` names a backup:
++/// `YYYYMMDDTHHMMSSZ` in UTC (days to civil date after Howard Hinnant).
++fn utc_stamp(seconds: u64) -> String {
++    let days = i64::try_from(seconds / 86_400).unwrap();
++    let rest = seconds % 86_400;
++    let z = days + 719_468;
++    let era = z.div_euclid(146_097);
++    let doe = z.rem_euclid(146_097);
++    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
++    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
++    let mp = (5 * doy + 2) / 153;
++    let day = doy - (153 * mp + 2) / 5 + 1;
++    let month = if mp < 10 { mp + 3 } else { mp - 9 };
++    let year = yoe + era * 400 + i64::from(month <= 2);
++    format!(
++        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z",
++        rest / 3_600,
++        rest % 3_600 / 60,
++        rest % 60
++    )
++}
++
++/// U22 (found by the first CI runs, whose machines upgrade twice within
++/// one second): an upgrade whose backup directory name
++/// (`<UTC second>-<build>`) is taken uses a free one, and the backups that
++/// were there stay as they were.
++#[test]
++fn u22_an_upgrade_in_a_second_whose_backup_name_is_taken_picks_a_free_one() {
++    let setup = Install::new();
++    assert_eq!(setup.install_from(&binaries()).status.code(), Some(0));
++    let build = build_of(&cli_binary());
++    let now = std::time::SystemTime::now()
++        .duration_since(std::time::UNIX_EPOCH)
++        .unwrap()
++        .as_secs();
++    let backups = setup.prefix.join("backups");
++    fs::create_dir_all(&backups).unwrap();
++    let taken: Vec<PathBuf> = (0..30)
++        .map(|offset| backups.join(format!("{}-{build}", utc_stamp(now + offset))))
++        .collect();
++    for dir in &taken {
++        fs::create_dir(dir).unwrap();
++        fs::write(dir.join("kept"), "an earlier backup\n").unwrap();
++    }
++
++    let upgraded = setup.install_from(&binaries());
++    assert_eq!(
++        upgraded.status.code(),
++        Some(0),
++        "{}",
++        text(&upgraded.stderr)
++    );
++    for dir in &taken {
++        let names: Vec<_> = fs::read_dir(dir)
++            .unwrap()
++            .map(|e| e.unwrap().file_name())
++            .collect();
++        assert_eq!(names, ["kept"], "{} was written into", dir.display());
++    }
++    let written: Vec<PathBuf> = fs::read_dir(&backups)
++        .unwrap()
++        .map(|entry| entry.unwrap().path())
++        .filter(|path| !taken.contains(path))
++        .collect();
++    assert_eq!(written.len(), 1, "{written:?}");
++    assert!(written[0].join("SHA256SUMS").is_file());
++    assert!(
++        text(&upgraded.stdout).contains(&format!("Backup: {}.", written[0].display())),
++        "{}",
++        text(&upgraded.stdout)
++    );
++}

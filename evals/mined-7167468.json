@@ -1,0 +1,44 @@
+{
+  "schema": "memprove.eval.task.v1",
+  "id": "mined-7167468",
+  "title": "init: record the Project for the first begin; fetch crates first",
+  "base": "5d1bdeeb51559ec9a267a85821743ee4ed4dfeec",
+  "prompt": "init: record the Project for the first begin; fetch crates first\n\nA fresh machine following the README stopped twice. cargo build\n--offline found no crates: the README, the guide and CONTRIBUTING fetch\nthem first (cargo fetch --locked), and install.sh fetches and builds\nagain when its offline build lacks crates. memprove begin --new-task\nright after memprove init asked for --project: init now records the\nProject it registers, begin reads that record when nothing else names a\nProject, and doctor says so before the first begin.",
+  "setup": [
+    {
+      "argv": [
+        "cargo",
+        "fetch",
+        "--locked"
+      ],
+      "timeout_secs": 900
+    },
+    {
+      "argv": [
+        "cargo",
+        "build",
+        "--offline",
+        "-p",
+        "memprove-daemon"
+      ],
+      "timeout_secs": 1800
+    }
+  ],
+  "check": {
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memprove-cli",
+      "--test",
+      "u17_init_e2e"
+    ],
+    "timeout_secs": 1800
+  },
+  "check_patch": "evals/mined-7167468.check.patch",
+  "agent_timeout_secs": 1800,
+  "tags": [
+    "mined",
+    "cli"
+  ]
+}
