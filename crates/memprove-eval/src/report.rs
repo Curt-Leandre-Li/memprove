@@ -392,10 +392,17 @@ impl<'a> Comparison<'a> {
             .filter(|note| no_longer_verified(note))
             .collect()
     }
+
+    /// Why memprove's statements were not read, when a report says so:
+    /// only when a trial did not pass, as for [`Self::listed_memory`].
+    fn memory_unread(&self) -> Option<&'a str> {
+        self.failures().next()?;
+        self.run.memory_unread.as_deref()
+    }
 }
 
-/// Whether a report lists `note` as memory memprove no longer holds as
-/// verified (see [`Comparison::listed_memory`]).
+/// Whether a report lists `note` as a statement memprove no longer holds
+/// as verified (see [`Comparison::listed_memory`]).
 fn no_longer_verified(note: &MemoryNote) -> bool {
     match note.verdict.as_str() {
         "verified" => false,

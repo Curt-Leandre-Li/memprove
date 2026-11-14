@@ -242,7 +242,9 @@ const SAMPLE_MARKDOWN: &str = "## memprove eval
 
 - `truncated-header` trial 1: **failed**: the check exited with code 101 (logs: `trials/truncated-header/1`)
 
-### Memory the agent was given that memprove no longer holds as verified
+### Statements memprove held that it no longer judges verified
+
+Read from memprove when the run started. The agent did not get them: a trial worktree has no memprove context.
 
 | Statement | Kind | Verdict | Text | Commit |
 |---|---|---|---|---|
@@ -369,7 +371,7 @@ fn memory_is_listed_only_on_failure_and_only_when_not_verified() {
         note("#8", "next", "verified"),
     ];
     let passing = render(&run, None, Format::Markdown);
-    assert!(!passing.contains("Memory the agent was given"));
+    assert!(!passing.contains("Statements memprove held"));
     run.results[0].outcome = Failed;
     let failing = render(&run, None, Format::Markdown);
     let listed = failing
@@ -380,7 +382,7 @@ fn memory_is_listed_only_on_failure_and_only_when_not_verified() {
     assert_eq!(listed, ["| #2", "| #3", "| #4", "| #6"]);
     assert!(failing.contains("| #2 | fact | stale | statement #2 | – |"));
     run.memory.truncate(1);
-    assert!(!render(&run, None, Format::Markdown).contains("Memory the agent was given"));
+    assert!(!render(&run, None, Format::Markdown).contains("Statements memprove held"));
 }
 
 #[test]
@@ -488,7 +490,22 @@ fn json_without_a_baseline_or_trials() {
             .and_then(|summary| summary.get("pass_permille"))
             .is_some_and(|value| matches!(value, JsonValue::Null))
     );
-    assert!(
-        text.contains("\"tasks\": [],\n  \"failures\": [],\n  \"memory_not_verified\": []\n}\n")
+    assert!(text.contains(
+        "\"tasks\": [],\n  \"failures\": [],\n  \"memory_not_verified\": [],\n  \"memory_unread\": null\n}\n"
+    ));
+}
+
+#[test]
+fn the_reason_memory_was_not_read_is_shown_with_failures() {
+    let mut run = run_of(&[("a", &[Passed])]);
+    run.memory_unread = Some("no memprove context for /work/repo".to_owned());
+    let line = "\nmemprove's memory was not read: no memprove context for /work/repo\n";
+    assert!(!render(&run, None, Format::Markdown).contains(line));
+    run.results[0].outcome = Failed;
+    assert!(render(&run, None, Format::Markdown).ends_with(line));
+    let value = parse(&render(&run, None, Format::Json), None).expect("strict JSON");
+    assert_eq!(
+        value.get("memory_unread").and_then(|value| value.as_str()),
+        Some("no memprove context for /work/repo")
     );
 }

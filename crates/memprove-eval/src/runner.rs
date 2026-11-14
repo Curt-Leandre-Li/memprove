@@ -140,17 +140,15 @@ pub fn run_suite(
     let run_id = format!("{}-{}", time::compact(started), nonce(started));
     let run_dir = options.out_root.join(&run_id);
     fs::create_dir_all(&run_dir).map_err(|error| EvalError::io(&run_dir, error))?;
-    let memory = match memory.map(|probe| probe.notes(root)) {
-        Some(Ok(notes)) => notes,
+    let (memory, memory_unread) = match memory.map(|probe| probe.notes(root)) {
+        Some(Ok(notes)) => (notes, None),
         Some(Err(reason)) => {
-            let path = run_dir.join("memory.err");
-            fs::write(&path, format!("{reason}\n")).map_err(|error| EvalError::io(&path, error))?;
             if options.progress {
-                eprintln!("memprove eval: running without memory: {reason}");
+                eprintln!("memprove eval: memprove's memory was not read: {reason}");
             }
-            Vec::new()
+            (Vec::new(), Some(reason))
         }
-        None => Vec::new(),
+        None => (Vec::new(), None),
     };
     let worktrees = std::env::temp_dir().join(format!("memprove-eval-{run_id}"));
     let jobs: Vec<Job<'_>> = tasks
@@ -194,6 +192,7 @@ pub fn run_suite(
             .collect(),
         results: results.into_iter().map(|(_, result)| result).collect(),
         memory,
+        memory_unread,
     };
     let path = run_dir.join("run.json");
     fs::write(&path, record.to_json()).map_err(|error| EvalError::io(&path, error))?;

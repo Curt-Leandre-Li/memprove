@@ -9,8 +9,9 @@
 //! `tasks` (one per report row: `id`, `title`, `passed`, `trials`,
 //! `outcomes`, `baseline`, `change`, `agent_ms`, `cost_microusd`, `diff`),
 //! `failures` (each trial that did not pass: `task`, `trial`, `outcome`,
-//! `reason`, `logs`), and `memory_not_verified` (the memory notes the
-//! Markdown report lists, empty when it lists none).
+//! `reason`, `logs`), `memory_not_verified` (the statements the Markdown
+//! report lists, empty when it lists none), and `memory_unread` (the
+//! run's sentence for why memprove's statements were not read, or `null`).
 
 use super::{Change, Comparison, Line, REPORT_SCHEMA};
 use crate::{MemoryNote, TrialResult, json::Out};
@@ -68,6 +69,10 @@ pub(super) fn render(comparison: &Comparison<'_>) -> String {
                     .map(memory_out)
                     .collect(),
             ),
+        ),
+        (
+            "memory_unread",
+            Out::opt(run.memory_unread.as_deref(), Out::str),
         ),
     ])
     .render()

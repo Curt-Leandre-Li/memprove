@@ -233,8 +233,9 @@ pub struct TrialResult {
     pub logs: String,
 }
 
-/// One statement of the memory the agent was given, as memprove judged it
-/// when the run started (see [`crate::MemoryProbe`]).
+/// One statement memprove held for the repository when the run started,
+/// with its verdict then (see [`crate::MemoryProbe`]). v0 does not give
+/// these statements to the agent: a trial worktree has no memprove context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryNote {
     /// The statement's label in the Pack, for example `#4`.
@@ -292,9 +293,13 @@ pub struct RunRecord {
     pub tasks: Vec<TaskRef>,
     /// Every trial, in task order, then trial order.
     pub results: Vec<TrialResult>,
-    /// The memory the agent was given; empty when there was none or no
-    /// probe.
+    /// The statements memprove held for the repository when the run
+    /// started; empty when it held none, when there was no probe, or when
+    /// they could not be read.
     pub memory: Vec<MemoryNote>,
+    /// Why memprove's statements could not be read (the probe's sentence);
+    /// `None` when they were read or there was no probe.
+    pub memory_unread: Option<String>,
 }
 
 /// Totals over a run's trials.
@@ -400,6 +405,10 @@ impl RunRecord {
                 "memory",
                 Out::Array(self.memory.iter().map(memory_out).collect()),
             ),
+            (
+                "memory_unread",
+                Out::opt(self.memory_unread.as_deref(), Out::str),
+            ),
             ("summary", summary_out(&summary)),
         ])
         .render()
@@ -452,6 +461,7 @@ impl RunRecord {
             tasks: indexed(&top, "tasks", task_ref_in)?,
             results: indexed(&top, "results", result_in)?,
             memory: indexed(&top, "memory", memory_in)?,
+            memory_unread: top.opt_str("memory_unread")?.map(str::to_owned),
         })
     }
 }
@@ -756,6 +766,7 @@ pub(crate) mod fixtures {
                 text: "the parser rejects a truncated header".to_owned(),
                 commit: Some("89abcdef".to_owned()),
             }],
+            memory_unread: None,
         }
     }
 }
@@ -771,6 +782,11 @@ mod tests {
         let back = RunRecord::from_json(&text, None).expect("reads back");
         assert_eq!(back, run);
         assert!(text.contains("\"pass_permille\": 500"));
+        let mut unread = run;
+        unread.memory.clear();
+        unread.memory_unread = Some("no Task is in progress".to_owned());
+        let back = RunRecord::from_json(&unread.to_json(), None).expect("reads back");
+        assert_eq!(back, unread);
     }
 
     #[test]
