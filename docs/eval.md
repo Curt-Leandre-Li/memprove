@@ -124,6 +124,8 @@ changes nothing. With `--verify`, each candidate is tried in two worktrees befor
 fail on the parent with the check patch applied, and pass on the commit. Candidates that do not are reported with the
 reason and the directory of their logs (under `.git/memprove-eval/mine/`) and are not written. A Rust repository
 builds from scratch in each worktree; setting `CARGO_TARGET_DIR` to one directory for the whole run saves most of it.
+In a Rust repository that builds `memprove` itself, run `memprove eval` from an installed binary then, not from that
+directory: the checks rebuild it there at older commits.
 
 Mined tasks are a start, not a finished suite: read each prompt (a commit message says what changed, not always what
 was asked), and add the setup the check needs that the guess cannot know (a service, a binary another package builds).
@@ -220,7 +222,8 @@ starts without a Pack.
 
 - Claude Code (`claude -p`), Codex (`codex exec`) and any program as `command`; not Cursor, which has no
   non-interactive CLI yet.
-- Cost and tokens are what the agent reports about itself; there is no price table.
+- Cost and tokens are what the agent reports about itself; there is no price table. An agent killed at its limit
+  reports nothing, so a run's cost leaves out its timed-out trials.
 - The agent gets no memprove Pack in its trial worktree (see "Memory").
 - The agent's worktree shares the repository's object store, so an agent that looks can find later commits,
   including the commit a mined task was made from. Tasks measure an agent setup against itself over time; they are
