@@ -1,0 +1,101 @@
+diff --git a/crates/memprove-cli/tests/u17_init_e2e.rs b/crates/memprove-cli/tests/u17_init_e2e.rs
+index 617c830..7843495 100644
+--- a/crates/memprove-cli/tests/u17_init_e2e.rs
++++ b/crates/memprove-cli/tests/u17_init_e2e.rs
+@@ -93,6 +93,25 @@ impl Install {
+         command.output().unwrap()
+     }
+ 
++    /// `memprove <words>` in `cwd` as `init_in` runs it (U22).
++    fn run_in(&self, cwd: &Path, words: &[&str]) -> Output {
++        let output = isolated(cli_binary())
++            .current_dir(cwd)
++            .env("HOME", &self.home)
++            .env("PATH", "/usr/bin:/bin")
++            .args(words)
++            .output()
++            .unwrap();
++        println!(
++            "$ memprove {}\n{}{}[exit {:?}]",
++            words.join(" "),
++            text(&output.stdout),
++            text(&output.stderr),
++            output.status.code()
++        );
++        output
++    }
++
+     fn stop(&mut self) {
+         if let Some(daemon) = self.daemon.take() {
+             daemon.stop();
+@@ -389,3 +408,70 @@ fn u22_init_replaces_what_it_wrote_under_the_previous_name() {
+     assert_eq!(read(&install.home.join(".codex/config.toml")), codex);
+     install.stop();
+ }
++
++/// U22 (the final check before publishing): right after `memprove init`,
++/// the README's session runs as written: `begin --new-task` needs no
++/// `--project` (init recorded the Project it registered), then `run`,
++/// `checkpoint create`, `resume --pack` and `end` succeed, and the fact is
++/// verified; doctor names the recorded Project before the first `begin`.
++#[test]
++fn u22_the_first_begin_after_init_needs_no_project_and_the_session_runs_to_end() {
++    let mut install = Install::new();
++    let repo = install.repo.clone();
++    let first = ok(&install.init_in(&repo, &["--client", "claude-code"]));
++    let project = first
++        .lines()
++        .find_map(|line| line.strip_prefix("Project "))
++        .and_then(|rest| rest.split(' ').next())
++        .unwrap()
++        .to_owned();
++    assert!(
++        first.contains("(the Project for the first `memprove begin` here)"),
++        "{first}"
++    );
++    assert!(
++        first.contains(&format!(
++            "`memprove begin --new-task <TITLE>` there starts the first Session, in Project {project}"
++        )),
++        "{first}"
++    );
++    // Run again: the record is there, nothing is written.
++    let again = ok(&install.init_in(&repo, &["--client", "claude-code"]));
++    assert!(!again.contains(" written"), "{again}");
++
++    let begun = ok(&install.run_in(
++        &repo,
++        &["begin", "--new-task", "parser: handle empty input"],
++    ));
++    let begun = parse_strict(begun.trim()).unwrap();
++    assert_eq!(
++        begun.get("project_id").and_then(JsonValue::as_str),
++        Some(project.as_str())
++    );
++    let ran = install.run_in(&repo, &["run", "--test", "--test-cases", "1", "--", "true"]);
++    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
++    assert!(
++        text(&ran.stderr).contains("label r1"),
++        "{}",
++        text(&ran.stderr)
++    );
++    ok(&install.run_in(
++        &repo,
++        &[
++            "checkpoint",
++            "create",
++            "--fact",
++            "the parser accepts empty input",
++            "--evidence",
++            "r1",
++            "--open",
++            "the error path for a truncated header is untested",
++            "--next",
++            "write the truncated-header test",
++        ],
++    ));
++    let pack = ok(&install.run_in(&repo, &["resume", "--pack"]));
++    assert!(pack.contains("#1 verified"), "{pack}");
++    ok(&install.run_in(&repo, &["end", "--reason", "empty input handled"]));
++    install.stop();
++}

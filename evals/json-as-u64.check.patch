@@ -1,0 +1,45 @@
+diff --git a/crates/memprove-protocol/tests/strict_json_unsigned.rs b/crates/memprove-protocol/tests/strict_json_unsigned.rs
+new file mode 100644
+index 0000000..c71dfd8
+--- /dev/null
++++ b/crates/memprove-protocol/tests/strict_json_unsigned.rs
+@@ -0,0 +1,39 @@
++use memprove_protocol::strict_json::{JsonValue, parse_strict};
++
++fn unsigned(text: &str) -> Option<u64> {
++    parse_strict(text).unwrap().as_u64()
++}
++
++#[test]
++fn integral_non_negative_numbers_are_unsigned_integers() {
++    assert_eq!(unsigned("0"), Some(0));
++    assert_eq!(unsigned("42"), Some(42));
++    assert_eq!(
++        unsigned("9223372036854775808"),
++        Some(9_223_372_036_854_775_808)
++    );
++    assert_eq!(unsigned("18446744073709551615"), Some(u64::MAX));
++}
++
++#[test]
++fn other_values_are_not_unsigned_integers() {
++    assert_eq!(unsigned("18446744073709551616"), None);
++    assert_eq!(unsigned("-1"), None);
++    assert_eq!(unsigned("1.0"), None);
++    assert_eq!(unsigned("1e3"), None);
++    assert_eq!(unsigned("\"7\""), None);
++    assert_eq!(unsigned("true"), None);
++    assert_eq!(unsigned("null"), None);
++    assert_eq!(unsigned("[1]"), None);
++}
++
++#[test]
++fn members_and_items_read_as_unsigned_integers() {
++    let value = parse_strict(r#"{"count": 18446744073709551615, "items": [3]}"#).unwrap();
++    assert_eq!(
++        value.get("count").and_then(JsonValue::as_u64),
++        Some(u64::MAX)
++    );
++    let items = value.get("items").and_then(JsonValue::as_array).unwrap();
++    assert_eq!(items[0].as_u64(), Some(3));
++}

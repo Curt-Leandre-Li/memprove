@@ -1,0 +1,35 @@
+{
+  "schema": "memprove.eval.task.v1",
+  "id": "json-as-u64",
+  "title": "strict JSON reads a number as u64",
+  "base": "bb16cebfb76024f4eb31c49f38336c846ae4b19c",
+  "prompt": "In memprove-protocol's strict JSON module (crates/memprove-protocol/src/strict_json.rs), add `JsonValue::as_u64` next to `as_i64`: it returns the value as a `u64` when it is a JSON number written as a non-negative integer (no sign, no fraction, no exponent) that fits in a `u64`, and `None` for anything else, including numbers above `u64::MAX`. Document it like the other accessors and keep `cargo clippy --workspace --all-targets -- -D warnings` clean.",
+  "setup": [
+    {
+      "argv": [
+        "cargo",
+        "fetch",
+        "--locked"
+      ],
+      "timeout_secs": 900
+    }
+  ],
+  "check": {
+    "argv": [
+      "cargo",
+      "test",
+      "--offline",
+      "-p",
+      "memprove-protocol",
+      "--test",
+      "strict_json_unsigned"
+    ],
+    "timeout_secs": 1800
+  },
+  "check_patch": "evals/json-as-u64.check.patch",
+  "agent_timeout_secs": 1800,
+  "tags": [
+    "protocol",
+    "hand-written"
+  ]
+}

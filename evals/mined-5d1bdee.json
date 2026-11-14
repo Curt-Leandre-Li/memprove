@@ -1,0 +1,44 @@
+{
+  "schema": "memprove.eval.task.v1",
+  "id": "mined-5d1bdee",
+  "title": "install: pick free names for an upgrade in the same second",
+  "base": "9afb62b643897ed26f74b1d3580ea43cacc76a8a",
+  "prompt": "install: pick free names for an upgrade in the same second\n\nTwo upgrades within one UTC second shared the backup directory name\n<second>-<build>, and the second failed. install.sh now takes the first\nfree -2, -3, ... for the backup directory and the old binaries. CI runs\nthe tests with --no-fail-fast.",
+  "setup": [
+    {
+      "argv": [
+        "cargo",
+        "fetch",
+        "--locked"
+      ],
+      "timeout_secs": 900
+    },
+    {
+      "argv": [
+        "cargo",
+        "build",
+        "--offline",
+        "-p",
+        "memprove-daemon"
+      ],
+      "timeout_secs": 1800
+    }
+  ],
+  "check": {
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memprove-cli",
+      "--test",
+      "u1e_install_e2e"
+    ],
+    "timeout_secs": 1800
+  },
+  "check_patch": "evals/mined-5d1bdee.check.patch",
+  "agent_timeout_secs": 1800,
+  "tags": [
+    "mined",
+    "cli"
+  ]
+}
