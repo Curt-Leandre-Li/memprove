@@ -98,6 +98,7 @@ fn u23_w1_the_summary_line_counts_one_case_per_trial() {
             trial("c", Outcome::Passed),
         ],
         memory: Vec::new(),
+        memory_unread: None,
     };
     let line = format!("{}\n", libtest_summary(&run));
     assert_eq!(cargo_case_count(line.as_bytes(), b"", 1), Some(3));

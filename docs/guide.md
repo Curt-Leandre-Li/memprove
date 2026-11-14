@@ -616,3 +616,6 @@ line counts one case per trial. `memprove eval --help` lists the commands; `docs
 - A fact's verdict compares the repository state the daemon can observe: tracked files, the index, HEAD and the
   branch. Ignored files, environment variables and permission bits other than the executable bit are not part of the
   state.
+- `memprove eval` gives the agent no Pack: a trial worktree has no memprove context of its own. `run.json` records
+  what memprove held for the repository when the run started, and a report lists those statements memprove no
+  longer judges verified when a trial did not pass.

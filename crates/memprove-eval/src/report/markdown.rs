@@ -31,13 +31,18 @@ pub(super) fn render(comparison: &Comparison<'_>) -> String {
     let memory = comparison.listed_memory();
     if !memory.is_empty() {
         text.push_str(
-            "\n### Memory the agent was given that memprove no longer holds as verified\n\n\
+            "\n### Statements memprove held that it no longer judges verified\n\n\
+             Read from memprove when the run started. The agent did not get them: a trial \
+             worktree has no memprove context.\n\n\
              | Statement | Kind | Verdict | Text | Commit |\n|---|---|---|---|---|\n",
         );
         for note in memory {
             text.push_str(&memory_row(note));
             text.push('\n');
         }
+    }
+    if let Some(reason) = comparison.memory_unread() {
+        let _ = write!(text, "\nmemprove's memory was not read: {}\n", md(reason));
     }
     text
 }
