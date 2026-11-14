@@ -1,0 +1,97 @@
+# memprove release: build the release binaries on GitHub's runners and attach
+# them, as one archive per platform with its SHA-256, to the GitHub Release of
+# a tag. It runs for a pushed tag v*, or by hand for an existing tag
+# (workflow_dispatch with `tag`). The archive's layout lets
+# `scripts/install.sh --from-binaries bin` run inside it.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the existing tag whose Release gets the archives, such as v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Rust the tests run with (see ci.yml); it wins over rust-toolchain.toml.
+  RUSTUP_TOOLCHAIN: 1.96.0
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 (glibc 2.35) so that the Linux binaries run on
+          # distributions from 2022 on.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+
+      - name: Install libclang (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+
+      - name: Install libclang (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          cargo fetch --locked
+          cargo build --offline --release -p memprove-cli -p memprove-daemon
+
+      - name: Package
+        run: |
+          version="${TAG#v}"
+          name="memprove-${version}-${{ matrix.target }}"
+          mkdir -p "$name/bin" "$name/scripts" "$name/docs"
+          cp target/release/memprove target/release/memproved "$name/bin/"
+          cp scripts/install.sh "$name/scripts/"
+          cp docs/guide.md "$name/docs/"
+          cp README.md LICENSE CHANGELOG.md "$name/"
+          tar -czf "$name.tar.gz" "$name"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+          echo "ARCHIVE=$name" >> "$GITHUB_ENV"
+
+      - name: Install from the archive and run doctor
+        run: |
+          check="$(mktemp -d)"
+          tar -xzf "$ARCHIVE.tar.gz" -C "$check"
+          export HOME="$check/home"
+          mkdir -p "$HOME"
+          (cd "$check/$ARCHIVE" && scripts/install.sh --from-binaries bin --no-write-profile)
+          "$HOME/.memprove/bin/memprove" --version
+          "$HOME/.memprove/bin/memprove" doctor
+          kill "$(head -n 1 "$HOME/.memprove/data/memproved.lock")"
+
+      - name: Attach to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ARCHIVE.tar.gz" "$ARCHIVE.tar.gz.sha256" --clobber --repo "${{ github.repository }}"
