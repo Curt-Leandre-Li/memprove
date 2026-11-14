@@ -223,6 +223,13 @@ Session-start hook (Claude Code):
                  permissions.allow rules), and mcpServers.memprove to .mcp.json
   hook uninstall removes that entry again; every other value stays, not the file's bytes
 
+Agent evaluation (memprove eval --help):
+  eval init | mine | run | report | baseline | gate
+                 gives a coding agent (Claude Code, Codex, or any program) this
+                 repository's own tasks, each in a Git worktree of its own, and
+                 judges each by its check command's exit code alone; compares
+                 runs with a committed baseline and fails CI below it
+
 Install and maintenance:
   init [--client <claude-code|codex|cursor>]... [--operator-token <FILE>] [--allow-tools] [--dry-run]
                  enables memprove in this repository: registers the Project with

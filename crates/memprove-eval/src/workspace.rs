@@ -62,7 +62,7 @@ impl Worktree {
         fs::write(out, &patch).map_err(|error| EvalError::io(out, error))?;
         let numstat = git(&self.path, &["diff", "--cached", "--numstat", base])?;
         let mut stat = DiffStat {
-            sha256: hex(&Sha256::digest(patch.as_bytes())),
+            sha256: crate::hex(&Sha256::digest(patch.as_bytes())),
             ..DiffStat::default()
         };
         for line in numstat.lines() {
@@ -98,16 +98,6 @@ impl Worktree {
         let target = self.path.to_string_lossy().into_owned();
         git(&self.repo_root, &["worktree", "remove", "--force", &target]).map(|_| ())
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    bytes
-        .iter()
-        .fold(String::with_capacity(64), |mut text, byte| {
-            write!(text, "{byte:02x}").expect("writing to a String cannot fail");
-            text
-        })
 }
 
 #[cfg(test)]
