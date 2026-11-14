@@ -16,7 +16,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
-repository = "https://github.com/Curt-Leandre-Li/memprove"
+repository = "https://github.com/memprove/memprove"
 publish = false
 
 [workspace.dependencies]
