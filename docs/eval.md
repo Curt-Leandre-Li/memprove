@@ -79,7 +79,7 @@ A task is a file `evals/<id>.json`:
 | `prompt` | what the agent is asked to do |
 | `setup` | commands run in the fresh worktree before the agent (installing packages); a failure is `setup_failed` |
 | `check` | the acceptance command: exit code 0 is `passed` |
-| `check_patch` | a patch, relative to the root, applied after the agent and before the check |
+| `check_patch` | a patch, relative to the root, applied after the agent and before the check; the files it touches are first put back as they are at `base`, so its version of them replaces the agent's |
 | `agent_timeout_secs` | the agent's limit; past it the agent is killed and the check runs all the same |
 | `tags` | free labels |
 
@@ -145,8 +145,7 @@ one of `passed`, `failed`, `check_timeout`, `setup_failed`, `patch_failed`, or `
 not the agent's fault, counted as not passed and reported apart). The run directory
 `<git common dir>/memprove-eval/runs/<run id>/` holds `run.json` and each trial's agent and check output and the
 agent's diff; it is inside `.git`, so it is never an untracked file. `latest` is the run directory with the greatest
-name. `--agent command -- <program> <args>...` runs any program as the agent, with `{prompt_file}` and `{workdir}`
-replaced in its arguments.
+name. See "Agents" for what each agent is started with.
 
 `report` prints a run as Markdown (for a pull request comment or the job summary) or as JSON: the pass rate, cost
 and tokens as the agent reported them, one row per task with each trial's outcome and, against a baseline, its change
@@ -158,6 +157,32 @@ run.
 
 Exit codes of every `eval` command: 0 done (all trials passed, the gate passed), 1 some trial did not pass or the gate
 failed, 2 usage error, 3 the command could not be done (a file, `git`, the agent would not start).
+
+## Agents
+
+Each agent runs in the trial's worktree with the prompt; its output goes to `agent.out` and `agent.err`, the prompt to
+`prompt.md`, in the trial's directory. `--model` and each `--agent-arg` are passed on.
+
+- `claude-code`: `claude -p --output-format json [--model M] --permission-mode bypassPermissions
+  --no-session-persistence <agent args> -- <prompt>`. Tokens, turns and `total_cost_usd` are read from its JSON
+  result. As root, Claude Code refuses `bypassPermissions` unless `IS_SANDBOX=1` is set; `memprove eval` does not set
+  it for you.
+- `codex`: `codex exec --json [--model M] --sandbox workspace-write --ephemeral -C <worktree> <agent args> --
+  <prompt>`. Tokens are summed over its `turn.completed` events; Codex reports no cost. Its `workspace-write` sandbox
+  has no network by default and cannot write the worktree's Git directory, so the agent cannot commit (the diff
+  includes uncommitted changes, so this does not change the outcome); `--agent-arg
+  --dangerously-bypass-approvals-and-sandbox` lifts both.
+- `command`: `--agent command -- <program> <args>...` runs any program, with `{prompt_file}` and `{workdir}` replaced
+  in its arguments and `MEMPROVE_EVAL_PROMPT_FILE`, `MEMPROVE_EVAL_WORKDIR`, `MEMPROVE_EVAL_USAGE_FILE` (and
+  `MEMPROVE_EVAL_MODEL` with `--model`) in its environment. A program that writes the usage file (members of
+  `run.json`'s `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_microusd`,
+  `turns`) has its usage recorded.
+
+`MEMPROVE_EVAL_CLAUDE` and `MEMPROVE_EVAL_CODEX` name the programs when they are not `claude` and `codex` on `PATH`.
+The agent, setup and check commands start without the variables that would tie them to the session running the
+evaluation: memprove's `MEMPROVE_CLIENT_SESSION`, `MEMPROVE_AGENT_NAME`, `MEMPROVE_AGENT_ROLE`,
+`MEMPROVE_PARENT_SESSION` (and their `CONTINUITY_` forms), Claude Code's session variables (`CLAUDECODE`,
+`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_REMOTE_SESSION_ID` and the like) and Codex's `CODEX_THREAD_ID`.
 
 ## CI
 
@@ -182,16 +207,21 @@ memprove run --test-format cargo -- memprove eval run evals/
 memprove records the run as test Evidence that a fact can cite ("the agent passes 5 of 5 evals with this CLAUDE.md"),
 and the fact goes stale when HEAD moves, like any other.
 
-Without `--no-memory`, `eval run` also reads the statements memprove would give an agent starting in the repository
+Without `--no-memory`, `eval run` also reads the statements memprove holds for the repository when the run starts
 (the Pack's facts, open items, decisions and next action, each with its verdict) and keeps them in `run.json`. When a
-trial fails, the report lists the statements the agent was given that memprove no longer held as `verified` at the
-time (stale, unconfirmed or tampered): the first place to look when an agent that used to pass starts failing.
+trial fails, the report lists those memprove no longer judges verified: a fact that is not `verified`, and any
+statement whose Evidence is `stale` or `tampered`. When memprove's statements cannot be read (no daemon, no Task in
+progress), the run goes on, `run.json` keeps the reason as `memory_unread`, and a report with failures says so.
+
+v0 does not give these statements to the agent: a trial worktree has no memprove context of its own, so the agent
+starts without a Pack.
 
 ## Limits of v0
 
 - Claude Code (`claude -p`), Codex (`codex exec`) and any program as `command`; not Cursor, which has no
   non-interactive CLI yet.
 - Cost and tokens are what the agent reports about itself; there is no price table.
+- The agent gets no memprove Pack in its trial worktree (see "Memory").
 - The agent's worktree shares the repository's object store, so an agent that looks can find later commits,
   including the commit a mined task was made from. Tasks measure an agent setup against itself over time; they are
   not a sealed benchmark.

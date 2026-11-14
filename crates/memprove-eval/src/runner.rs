@@ -21,14 +21,10 @@ use crate::{
     workspace::Worktree,
 };
 
-/// Variables removed from the environment of setup and check commands:
-/// they would tie a project's test run to the session that started the
-/// evaluation.
-pub const SCRUBBED_ENV: &[&str] = &[
-    "MEMPROVE_CLIENT_SESSION",
-    "CONTINUITY_CLIENT_SESSION",
-    "MEMPROVE_PARENT_SESSION",
-];
+/// Variables removed from the environment of setup and check commands, the
+/// same the agent adapters remove: they would tie a project's test run to
+/// the session that started the evaluation.
+pub const SCRUBBED_ENV: &[&str] = crate::agent::REMOVED_ENV;
 
 /// How a suite is run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -360,11 +356,11 @@ fn in_worktree(
         }
     }
     if let Some(patch) = &task.check_patch
-        && let Err(error) = tree.apply(&context.options.repo_root.join(patch))
+        && let Err(error) = tree.restore_and_apply(base, &context.options.repo_root.join(patch))
     {
         result.outcome = Outcome::PatchFailed;
         result.reason = Some(format!(
-            "the check patch {} does not apply to what the agent left: {}",
+            "the check patch {} does not apply at the base: {}",
             patch.display(),
             first_line(&error.to_string())
         ));

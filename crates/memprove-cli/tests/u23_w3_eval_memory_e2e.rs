@@ -250,7 +250,7 @@ fn u23_w3_the_probe_reads_a_verified_and_a_stale_fact_and_writes_nothing() {
     assert_eq!(
         refused,
         format!(
-            "memprove's memory was not read: {} has no memprove context (memprove init or \
+            "{} has no memprove context (memprove init or \
              memprove begin there gives it one)",
             elsewhere.display()
         )
@@ -262,9 +262,8 @@ fn u23_w3_the_probe_reads_a_verified_and_a_stale_fact_and_writes_nothing() {
     }
     let refused = notes_with(&install.environment(), &repo).expect_err("no daemon");
     assert!(
-        refused
-            == "memprove's memory was not read: memproved is not running (the data directory has no socket)"
-            || refused == "memprove's memory was not read: cannot connect to memproved",
+        refused == "memproved is not running (the data directory has no socket)"
+            || refused == "cannot connect to memproved",
         "{refused}"
     );
 }
@@ -277,7 +276,7 @@ fn u23_w3_the_probe_says_why_without_a_configuration() {
     let refused = notes_with(&Environment::default(), &repo).expect_err("no configuration");
     assert_eq!(
         refused,
-        "memprove's memory was not read: no configuration directory (none of \
+        "no configuration directory (none of \
          MEMPROVE_CONFIG_DIR, XDG_CONFIG_HOME, HOME is set)"
     );
     // A home with a configuration directory but no installation.

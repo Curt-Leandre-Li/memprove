@@ -80,6 +80,7 @@ fn task_file(root: &Path, id: &str, members: &str) {
 
 const CHECK: &str = r#""check": {"argv": ["sh", "check.sh"], "timeout_secs": 20}"#;
 const NEW_FILE_PATCH: &str = "diff --git a/answer.txt b/answer.txt\nnew file mode 100644\n--- /dev/null\n+++ b/answer.txt\n@@ -0,0 +1 @@\n+ok\n";
+const STALE_PATCH: &str = "diff --git a/README b/README\n--- a/README\n+++ b/README\n@@ -1 +1 @@\n-not what the base holds\n+changed\n";
 const HIDDEN_PATCH: &str = "diff --git a/hidden.sh b/hidden.sh\nnew file mode 100644\n--- /dev/null\n+++ b/hidden.sh\n@@ -0,0 +1 @@\n+test \"$(cat answer.txt)\" = ok && test ! -e leaked\n";
 
 fn repository() -> tempfile::TempDir {
@@ -118,12 +119,12 @@ fn repository() -> tempfile::TempDir {
             r#""prompt": "echo ok > answer.txt", "setup": [{{"argv": ["sh", "-c", "exit 4"]}}], {CHECK}"#
         ),
     );
-    write(root, "evals/e.check.patch", NEW_FILE_PATCH);
+    write(root, "evals/e.check.patch", STALE_PATCH);
     task_file(
         root,
         "e-patch-fails",
         &format!(
-            r#""prompt": "echo mine > answer.txt", "check_patch": "evals/e.check.patch", {CHECK}"#
+            r#""prompt": "echo ok > answer.txt", "check_patch": "evals/e.check.patch", {CHECK}"#
         ),
     );
     task_file(
@@ -141,6 +142,15 @@ fn repository() -> tempfile::TempDir {
         root,
         "h-agent-timeout",
         &format!(r#""prompt": "echo ok > answer.txt; sleep 30", "agent_timeout_secs": 1, {CHECK}"#),
+    );
+    // The check patch's file replaces the agent's version of it.
+    write(root, "evals/i.check.patch", NEW_FILE_PATCH);
+    task_file(
+        root,
+        "i-patch-replaces",
+        &format!(
+            r#""prompt": "echo mine > answer.txt", "check_patch": "evals/i.check.patch", {CHECK}"#
+        ),
     );
     dir
 }
@@ -192,11 +202,11 @@ fn files_and_cleanup(root: &Path, out: &Path, run: &memprove_eval::RunRecord, ru
     assert_eq!(runner::resolve_run_dir(out, None).expect("latest"), run_dir);
     assert_eq!(run.agent_version.as_deref(), Some("script 1"));
     let summary = run.summary();
-    assert_eq!((summary.passed, summary.trials, summary.errors), (3, 8, 1));
-    assert_eq!(summary.cost_microusd, Some(6_000));
+    assert_eq!((summary.passed, summary.trials, summary.errors), (4, 9, 1));
+    assert_eq!(summary.cost_microusd, Some(7_000));
     assert!(
         runner::libtest_summary(run)
-            .starts_with("test result: FAILED. 3 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in ")
+            .starts_with("test result: FAILED. 4 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in ")
     );
 
     // Every trial's worktree is gone, and the repository is as it was.
@@ -214,7 +224,7 @@ fn u23_w1_every_outcome_is_judged_by_the_check_alone() {
     let root = repo.path();
     let out = tempfile::tempdir().expect("out");
     let suite = task::load_suite(root, &[PathBuf::from("evals")]).expect("suite");
-    assert_eq!(suite.len(), 8);
+    assert_eq!(suite.len(), 9);
     let options = options(root, out.path(), 1, 4);
     let (run, run_dir) = runner::run_suite(&options, &suite, &ScriptAgent, None).expect("runs");
 
@@ -234,6 +244,7 @@ fn u23_w1_every_outcome_is_judged_by_the_check_alone() {
             ("f-cannot-start", Outcome::Error),
             ("g-hidden-test", Outcome::Passed),
             ("h-agent-timeout", Outcome::Passed),
+            ("i-patch-replaces", Outcome::Passed),
         ]
     );
     let by_task = |id: &str| {
@@ -260,6 +271,12 @@ fn u23_w1_every_outcome_is_judged_by_the_check_alone() {
         by_task("e-patch-fails").reason.as_deref().is_some_and(
             |reason| reason.starts_with("the check patch evals/e.check.patch does not apply")
         )
+    );
+    let replaced = by_task("i-patch-replaces");
+    assert!(
+        fs::read_to_string(run_dir.join(&replaced.logs).join("agent.diff"))
+            .expect("diff")
+            .contains("+mine")
     );
     assert_eq!(
         by_task("f-cannot-start").reason.as_deref(),

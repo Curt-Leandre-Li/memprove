@@ -52,7 +52,8 @@ impl MemoryProbe for DaemonMemory {
 /// directory, no context for the repository, no daemon or token, no Task
 /// in progress, or a Capsule the Pack cannot render.
 pub fn notes_with(environment: &Environment, repo_root: &Path) -> Result<Vec<MemoryNote>, String> {
-    let not_read = |why: &str| format!("memprove's memory was not read: {why}");
+    // The reason alone: `memprove eval` says what it is the reason for.
+    let not_read = |why: &str| why.to_owned();
     let root = repo_root.canonicalize().map_err(|error| {
         not_read(&format!(
             "{} cannot be resolved ({error})",

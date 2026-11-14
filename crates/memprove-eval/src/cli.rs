@@ -9,7 +9,7 @@ use std::{
 use crate::{
     AgentKind, AgentSpec, Baseline, EvalError, MemoryProbe, agent_for, git,
     init::{self, InitSpec},
-    mine::{self, MineSpec},
+    mine::{self, MineSpec, MineStatus},
     report::{self, Format, GatePolicy},
     runner::{self, RunOptions},
     task,
@@ -94,7 +94,7 @@ const HELP: &[Help] = &[
         summary: "write tasks from this repository's history",
         usage: "memprove eval mine [--limit <N>] [--range <GIT_RANGE>] [--out <DIR>] [--verify] [--dry-run]",
         options: &[
-            ("--limit <N>", "at most N tasks; default 5"),
+            ("--limit <N>", "at most N tasks; default 10"),
             (
                 "--range <GIT_RANGE>",
                 "the commits to look at, in git log syntax; default the history of HEAD",
@@ -110,7 +110,8 @@ const HELP: &[Help] = &[
             ("--dry-run", "print what would be written; write nothing"),
         ],
         notes: "A commit that changed tests and code becomes a task: its parent is the base, its\n\
-                message the prompt, and its test changes the check patch.",
+                message the prompt, and its test changes the check patch. A task file that exists\n\
+                is left as it is and counts towards --limit; a task --verify refuses does not.",
     },
     Help {
         name: "run",
@@ -459,6 +460,12 @@ fn init_command(args: &Args, cwd: &Path) -> Result<u8, EvalError> {
     for path in &report.unchanged {
         println!("unchanged {}", path.display());
     }
+    for path in &report.kept {
+        println!(
+            "kept {} (it holds other text; delete it to have init write it)",
+            path.display()
+        );
+    }
     for note in &report.notes {
         println!("note: {note}");
     }
@@ -472,20 +479,24 @@ fn mine_command(args: &Args, cwd: &Path) -> Result<u8, EvalError> {
         0,
         false,
     )?;
-    let spec = MineSpec {
-        repo_root: git::toplevel(cwd)?,
-        limit: usize::try_from(args.number("--limit", 1..=100, 5)?).unwrap_or(5),
-        range: args.one("--range")?.map(str::to_owned),
-        out_dir: PathBuf::from(args.one("--out")?.unwrap_or(DEFAULT_TASKS)),
-        dry_run: args.flag("--dry-run"),
-    };
-    if args.flag("--verify") {
-        return Err(EvalError::Unimplemented("mine --verify"));
+    let mut spec = MineSpec::new(git::toplevel(cwd)?);
+    spec.limit = usize::try_from(args.number("--limit", 1..=100, 10)?).unwrap_or(10);
+    spec.range = args.one("--range")?.map(str::to_owned);
+    if let Some(out) = args.one("--out")? {
+        spec.out_dir = PathBuf::from(out);
     }
-    let verb = if spec.dry_run { "would write" } else { "wrote" };
+    spec.dry_run = args.flag("--dry-run");
+    spec.verify = args.flag("--verify");
     let tasks = mine::mine(&spec)?;
     for task in &tasks {
-        println!("{verb} {} from {}", task.path.display(), task.commit);
+        let path = task.path.display();
+        let commit = &task.commit;
+        match &task.status {
+            MineStatus::Written => println!("wrote {path} from {commit}"),
+            MineStatus::DryRun => println!("would write {path} from {commit}"),
+            MineStatus::Exists => println!("kept {path} (it exists)"),
+            MineStatus::Rejected(reason) => println!("refused {commit}: {reason}"),
+        }
     }
     if tasks.is_empty() {
         println!("no commit in the range changed both tests and code");
