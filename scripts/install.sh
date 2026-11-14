@@ -65,7 +65,9 @@ Options:
   -h, --help             print this help
 
 The build runs `cargo build --offline --release -p memprove-cli
--p memprove-daemon` in this repository. On macOS, LIBCLANG_PATH and
+-p memprove-daemon` in this repository; when crates it needs are not on
+this machine yet, it runs `cargo fetch --locked` (which downloads them) and
+builds again. On macOS, LIBCLANG_PATH and
 DYLD_FALLBACK_LIBRARY_PATH default to /opt/homebrew/opt/llvm/lib; set them
 to override. Exit status: 0 success, 1 a step failed (an upgrade put the old
 version back), 2 usage error.
@@ -178,8 +180,14 @@ else
     export DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/opt/llvm/lib}"
   fi
   say "Building the release binaries (offline) in $source_dir ..."
-  (cd "$source_dir" && cargo build --offline --release -p memprove-cli -p memprove-daemon) \
-    || die "the release build failed; nothing was installed or changed"
+  # U22: a machine that has never built this repository has none of its
+  # crates; they are fetched once (the only network access) and the
+  # offline build runs again. A machine with them builds without network.
+  if ! (cd "$source_dir" && cargo build --offline --release -p memprove-cli -p memprove-daemon); then
+    say "Fetching the crates the build needs (cargo fetch --locked) and building again ..."
+    (cd "$source_dir" && cargo fetch --locked && cargo build --offline --release -p memprove-cli -p memprove-daemon) \
+      || die "the release build failed; nothing was installed or changed"
+  fi
   target_dir="${CARGO_TARGET_DIR:-target}"
   case "$target_dir" in
     /*) ;;

@@ -915,7 +915,7 @@ pub const COMMANDS: &[CommandHelp] = &[
         options: &[
             (
                 "--project <PROJECT_ID>",
-                "needed the first time in a Workspace; later the context's",
+                "needed the first time in a Workspace that `memprove init` did not register; later the context's",
             ),
             ("--task <TASK_ID>", "continue this Task"),
             (

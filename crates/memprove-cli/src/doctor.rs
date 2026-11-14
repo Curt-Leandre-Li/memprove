@@ -233,7 +233,17 @@ pub fn run(spec: &DoctorSpec, environment: &Environment) -> Vec<Check> {
         ));
         return checks;
     };
-    checks.push(workspace_check(&root, &environment.lookup, &reach));
+    // U22: the Project `memprove init` recorded for the first `begin`.
+    let recorded = environment
+        .store
+        .as_ref()
+        .and_then(|store| store.recorded_project_near(&root));
+    checks.push(workspace_check(
+        &root,
+        &environment.lookup,
+        recorded.as_deref(),
+        &reach,
+    ));
     let config = environment
         .store
         .as_ref()
@@ -941,7 +951,12 @@ fn config_dir_check(store: Option<&ContextStore>) -> Check {
     }
 }
 
-fn workspace_check(root: &Path, lookup: &ContextLookup, reach: &Reach) -> Check {
+fn workspace_check(
+    root: &Path,
+    lookup: &ContextLookup,
+    recorded: Option<&str>,
+    reach: &Reach,
+) -> Check {
     let context = match lookup {
         ContextLookup::Found(context) => context,
         ContextLookup::Broken(reason) => {
@@ -952,15 +967,26 @@ fn workspace_check(root: &Path, lookup: &ContextLookup, reach: &Reach) -> Check 
             );
         }
         _ => {
-            return check(
-                "workspace",
-                Status::Warn,
-                format!(
-                    "the Workspace {} has no current context: run `memprove begin --project \
-                     <PROJECT_ID> --new-task <TITLE>` there (the operator registers the Project)",
-                    root.display()
-                ),
+            // U22: after `memprove init`, the recorded Project needs no
+            // --project.
+            let detail = recorded.map_or_else(
+                || {
+                    format!(
+                        "the Workspace {} has no current context: run `memprove begin --project \
+                         <PROJECT_ID> --new-task <TITLE>` there (the operator registers the Project)",
+                        root.display()
+                    )
+                },
+                |project| {
+                    format!(
+                        "the Workspace {} has no current context yet: `memprove begin --new-task \
+                         <TITLE>` there starts the first Session, in Project {project} (the one \
+                         `memprove init` registered)",
+                        root.display()
+                    )
+                },
             );
+            return check("workspace", Status::Warn, detail);
         }
     };
     let described = format!(

@@ -16,6 +16,12 @@ repository publishable.
   `permissions.allow` rules only when asked, and otherwise prints them;
   it also replaces what it wrote under the previous name (the `AGENTS.md`
   note, the Codex table, an unedited `.cursor/rules/continuity.mdc`).
+- `memprove init` records the Project it registers, so the first
+  `memprove begin --new-task` after it needs no `--project` (before, it
+  stopped with a usage error); `doctor` says so before that first `begin`.
+- `scripts/install.sh`, when it builds and crates are missing, runs
+  `cargo fetch --locked` and builds again; the README, the guide and
+  CONTRIBUTING fetch the crates before their offline builds.
 - `scripts/install.sh` gives an upgrade within the same second as the one
   before it a free backup directory and free names for the old binaries
   (`-2`, `-3`, ...) instead of failing on a backup directory that exists.

@@ -1359,16 +1359,28 @@ impl ContextStore {
     /// U2 (H1, Owner O5): the Project this client session's last-Pack
     /// record names, of a Pack or of no Pack, at the nearest Workspace root
     /// at or above `cwd` that has a last-Pack file (where
-    /// [`ContextStore::lookup`] reads one); `None` for the directory's
-    /// store, and when there is no file, it names none, or it cannot be
-    /// read. Only the shell's `begin` asks for it.
+    /// [`ContextStore::lookup`] reads one); `None` when it names none or it
+    /// cannot be read. Only the shell's `begin` asks for it. U22 (the final
+    /// check before publishing): when this client session has no such file
+    /// (and for the directory's store itself), the Project the directory's
+    /// record names, which `memprove init` writes when it registers the
+    /// Project, so that the first `begin` after `init` needs no
+    /// `--project`.
     #[must_use]
     pub fn recorded_project_near(&self, cwd: &Path) -> Option<String> {
-        self.client_session.as_ref()?;
         let cwd = fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-        cwd.ancestors()
-            .find(|directory| fs::symlink_metadata(self.last_pack_path(directory)).is_ok())
-            .and_then(|directory| self.recorded_project(directory))
+        let nearest = |store: &Self| {
+            cwd.ancestors()
+                .find(|directory| fs::symlink_metadata(store.last_pack_path(directory)).is_ok())
+                .map(Path::to_path_buf)
+        };
+        if self.client_session.is_some()
+            && let Some(directory) = nearest(self)
+        {
+            return self.recorded_project(&directory);
+        }
+        let store = self.for_client(None);
+        nearest(&store).and_then(|directory| store.recorded_project(&directory))
     }
 
     /// U2 (H2, N-12): whether the last-Pack file of `root` exists but
@@ -1762,7 +1774,12 @@ mod tests {
             Some(project)
         );
         directory.save_no_pack(&root, Some(project)).unwrap();
-        assert_eq!(directory.recorded_project_near(&deeper), None);
+        // U22: the directory's store reads its own record too (the one
+        // `memprove init` writes).
+        assert_eq!(
+            directory.recorded_project_near(&deeper).as_deref(),
+            Some(project)
+        );
         fs::write(&path, "{not json").unwrap();
         assert!(store.has_damaged_record(&root));
         assert_eq!(store.recorded_project_near(&deeper), None);
@@ -1779,6 +1796,50 @@ mod tests {
         fs::set_permissions(&elsewhere, fs::Permissions::from_mode(0o600)).unwrap();
         std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
         assert!(store.has_damaged_record(&root));
+    }
+
+    /// U22 (the final check before publishing): `memprove init` records the
+    /// Project it registered in the directory's record of the Workspace
+    /// root, and `begin` finds it in a plain shell and in a client session
+    /// that has no record of its own; a client session's own record, even
+    /// a damaged one, comes first, and a record names nothing for another
+    /// root.
+    #[test]
+    fn u22_the_directory_record_names_the_project_when_nothing_else_does() {
+        let base = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(base.path()).unwrap();
+        let root = base.join("work");
+        let deeper = root.join("src");
+        let other = base.join("other");
+        fs::create_dir_all(&deeper).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        let directory = ContextStore {
+            config_dir: base.join("config"),
+            client_session: None,
+        };
+        let client = directory.for_client(Some("client-y"));
+        let registered = "018f47a0-0000-7000-8000-000000000002";
+        let own = "018f47a0-0000-7000-8000-000000000003";
+        assert_eq!(directory.recorded_project_near(&deeper), None);
+        directory.save_no_pack(&root, Some(registered)).unwrap();
+        assert_eq!(
+            directory.recorded_project_near(&deeper).as_deref(),
+            Some(registered)
+        );
+        assert_eq!(
+            client.recorded_project_near(&deeper).as_deref(),
+            Some(registered),
+            "a client session with no record of its own"
+        );
+        assert_eq!(directory.recorded_project_near(&other), None);
+        let path = client.save_no_pack(&root, Some(own)).unwrap();
+        assert_eq!(client.recorded_project_near(&deeper).as_deref(), Some(own));
+        fs::write(&path, "{not json").unwrap();
+        assert_eq!(
+            client.recorded_project_near(&deeper),
+            None,
+            "a damaged record of its own is not passed over"
+        );
     }
 
     /// U1 (A1, Owner O2): `CLAUDE_CODE_SESSION_ID` takes 1 to 128

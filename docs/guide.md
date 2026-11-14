@@ -23,6 +23,7 @@ release binaries):
 ```bash
 export LIBCLANG_PATH=/opt/homebrew/opt/llvm/lib              # macOS with Homebrew LLVM; Ubuntu: libclang-dev
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib
+cargo fetch --locked                                        # downloads the crates once; the rest is offline
 cargo build --offline --release -p memprove-cli -p memprove-daemon
 scripts/install.sh --from-binaries target/release          # default prefix ~/.memprove
 scripts/install.sh --prefix /opt/memprove --from-binaries target/release --write-profile
@@ -59,22 +60,22 @@ memprove init --allow-tools                # and Claude Code's allow rules
 memprove init --client claude-code --client codex --client cursor --dry-run
 ```
 
-`init` registers the Project with the operator's token (a repository already registered gets its Project back), adds
-`.claude/settings.local.json` and `.mcp.json` (and Cursor's `.cursor/mcp.json` and `.cursor/rules/memprove.mdc`) to
-`.git/info/exclude`, runs `hook install` for Claude Code (with `--allow-tools`, `hook install --allow-tools`; without
-it the three rules are printed, not written), writes `[mcp_servers.memprove]` into Codex's `config.toml`
-(`$CODEX_HOME`, else `~/.codex`) and a short note into `AGENTS.md` (repository content: commit it), writes
-`mcpServers.memprove` into `.cursor/mcp.json` and the same note as an always-applied Cursor rule, and ends with
-`doctor`. Every file keeps its other content; run again, it changes nothing (`already as asked`). What `init` wrote
-under the previous name `continuity` is replaced (the `AGENTS.md` note, the Codex table, the Claude Code entries), and
-an unedited `.cursor/rules/continuity.mdc` is removed. Neither token is printed. Before the first `begin`, `doctor`
-warns and exits 0: its `workspace` line says the Workspace has no context yet, and its `ledger` line says `not
-checked: no context names a Project here` (`ledger` (`not checked: no context names a Project here`)); both pass after
-the first Session. `--allow-tools` writes the rules for the MCP server and for `memprove run` only. Whether the agent
-may `Edit` files or run `git add` and `git commit` is the operator's decision for each project, and nothing here
-allows it: a `claude -p` run with no rule for them is refused those tools as `permission_denied`, edits nothing, and
-cannot commit before the run that is its Evidence. Add the rules the Task needs by hand; "Unattended takeover" ("What
-to allow") lists them and says why.
+`init` registers the Project with the operator's token (a repository already registered gets its Project back) and
+records it for the first `memprove begin` there (which then needs no `--project`), adds `.claude/settings.local.json`
+and `.mcp.json` (and Cursor's `.cursor/mcp.json` and `.cursor/rules/memprove.mdc`) to `.git/info/exclude`, runs `hook
+install` for Claude Code (with `--allow-tools`, `hook install --allow-tools`; without it the three rules are printed,
+not written), writes `[mcp_servers.memprove]` into Codex's `config.toml` (`$CODEX_HOME`, else `~/.codex`) and a short
+note into `AGENTS.md` (repository content: commit it), writes `mcpServers.memprove` into `.cursor/mcp.json` and the
+same note as an always-applied Cursor rule, and ends with `doctor`. Every file keeps its other content; run again, it
+changes nothing (`already as asked`). What `init` wrote under the previous name `continuity` is replaced (the
+`AGENTS.md` note, the Codex table, the Claude Code entries), and an unedited `.cursor/rules/continuity.mdc` is
+removed. Neither token is printed. Before the first `begin`, `doctor` warns and exits 0: its `workspace` line says the
+Workspace has no context yet, and its `ledger` line says `not checked: no context names a Project here` (`ledger`
+(`not checked: no context names a Project here`)); both pass after the first Session. `--allow-tools` writes the rules
+for the MCP server and for `memprove run` only. Whether the agent may `Edit` files or run `git add` and `git commit`
+is the operator's decision for each project, and nothing here allows it: a `claude -p` run with no rule for them is
+refused those tools as `permission_denied`, edits nothing, and cannot commit before the run that is its Evidence. Add
+the rules the Task needs by hand; "Unattended takeover" ("What to allow") lists them and says why.
 
 What `init` writes by hand, when you prefer that: `memprove mcp print-config` prints the two parts, each under a
 line `==> <file> <==`: the `.claude/settings.local.json` part (`hooks.SessionStart`, `env.MEMPROVE_CONFIG_DIR`, the

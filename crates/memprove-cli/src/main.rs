@@ -440,15 +440,38 @@ impl InitPlan {
         let reply = daemon
             .exchange(&request)
             .map_err(|failed| ExitCode::from(failed.code()))?;
-        let project = parse_strict(&reply.body)
-            .ok()
-            .and_then(|body| {
-                body.get("project_id")
-                    .and_then(JsonValue::as_str)
-                    .map(str::to_owned)
-            })
+        let registered = parse_strict(&reply.body).ok().and_then(|body| {
+            body.get("project_id")
+                .and_then(JsonValue::as_str)
+                .map(str::to_owned)
+        });
+        let project = registered
+            .clone()
             .unwrap_or_else(|| "(id not in the reply)".to_owned());
         println!("Project {project} registered for {}", self.root.display());
+        // U22 (the final check before publishing): the first `begin` here
+        // takes this Project without --project, from the directory's record
+        // of the Workspace root, written unless a record is there already
+        // (one of a Pack names its Project too).
+        if let Some(project) = registered {
+            let store = ContextStore {
+                config_dir: self.config.clone(),
+                client_session: None,
+            };
+            if std::fs::symlink_metadata(store.last_pack_path(&self.root)).is_err() {
+                match store.save_no_pack(&self.root, Some(&project)) {
+                    Ok(path) => println!(
+                        "{} written (the Project for the first `memprove begin` here)",
+                        path.display()
+                    ),
+                    Err(error) => {
+                        return Err(fail(format!(
+                            "the Project could not be recorded for `memprove begin`: {error}"
+                        )));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

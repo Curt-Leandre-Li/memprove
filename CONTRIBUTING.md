@@ -12,6 +12,7 @@ with Homebrew LLVM:
 ```bash
 export LIBCLANG_PATH=/opt/homebrew/opt/llvm/lib
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib
+cargo fetch --locked        # once: downloads the crates the offline commands need
 cargo build --offline -p memprove-cli -p memprove-daemon
 cargo test --offline --workspace
 cargo fmt --all -- --check
@@ -21,7 +22,7 @@ cargo clippy --offline --workspace --all-targets -- -D warnings
 On Ubuntu, `apt-get install libclang-dev` is enough. The integration tests
 start a real `memproved` on a Unix socket in a temporary directory, so
 they need no installation and touch nothing of yours. CI
-(`.github/workflows/ci.yml`) runs these four commands on macOS and Ubuntu.
+(`.github/workflows/ci.yml`) runs these commands on macOS and Ubuntu.
 
 ## What a change must keep
 

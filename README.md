@@ -39,6 +39,7 @@ it.
    ```bash
    export LIBCLANG_PATH=/opt/homebrew/opt/llvm/lib
    export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib
+   cargo fetch --locked        # downloads the crates once; the rest is offline
    cargo build --offline --release -p memprove-cli -p memprove-daemon
    scripts/install.sh --from-binaries target/release
    ```
@@ -56,7 +57,8 @@ it.
    memprove init
    ```
 
-   It registers the Project, keeps memprove's own files out of your
+   It registers the Project (and records it, so the first `memprove begin`
+   there needs no `--project`), keeps memprove's own files out of your
    Evidence through `.git/info/exclude`, writes the Claude Code hook and MCP
    entry (`.claude/settings.local.json`, `.mcp.json`), the Codex server
    entry (`~/.codex/config.toml`) with a short note in `AGENTS.md`, the
@@ -82,7 +84,9 @@ memprove end --reason "empty input handled"
 `begin` starts a Session on a Task (and creates the Task with `--new-task`).
 `run` runs the command in your shell and records its result together with
 the repository state. `checkpoint create` records facts (each citing runs),
-open items, decisions and the next action; a fact needs a passed test run.
+open items, decisions and the next action; a fact needs a passed test run,
+and stays `verified` only while the tree matches that run (commit or ignore
+a file the test run creates, such as a first `Cargo.lock`).
 `resume --pack` prints the Context Pack: the Task's verdict, the Sessions,
 the last passed run, what can be done next, every active statement with its
 verdict and the commit it is bound to, and what to run again. `end` ends
