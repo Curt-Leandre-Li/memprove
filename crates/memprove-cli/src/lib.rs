@@ -26,6 +26,7 @@ pub mod claims;
 pub mod context;
 pub mod display;
 pub mod doctor;
+pub mod eval_memory;
 pub mod flow;
 pub mod help;
 pub mod hook;
