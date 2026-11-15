@@ -37,7 +37,7 @@ pub struct InitSpec {
     pub agent: AgentKind,
     /// Also write `.github/workflows/memprove-eval.yml`.
     pub workflow: bool,
-    /// Print what would be written; write nothing.
+    /// List the files that would be written; write nothing.
     pub dry_run: bool,
 }
 

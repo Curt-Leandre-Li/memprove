@@ -36,7 +36,7 @@ pub struct MineSpec {
     pub range: Option<String>,
     /// Where the task files and patches go, relative to the root.
     pub out_dir: PathBuf,
-    /// Print what would be written; write nothing (and verify nothing).
+    /// List the files that would be written; write nothing (and verify nothing).
     pub dry_run: bool,
     /// Keep a task only when its check fails on the parent commit with the
     /// check patch applied and passes on the commit: each candidate is
