@@ -669,12 +669,12 @@ mod tests {
         ]);
         assert_eq!(out.len(), 8, "{out:#?}");
         assert!(out[0].starts_with(r#"{"jsonrpc":"2.0","id":"discover-1","result":{"resultType":"complete","supportedVersions":["2026-07-28"],"capabilities":{"tools":{}},"instructions":"#), "{}", out[0]);
-        assert!(out[0].ends_with(r#""ttlMs":3600000,"cacheScope":"public","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"memprove","title":"memprove","version":"0.1.0"}}}}"#), "{}", out[0]);
+        assert!(out[0].ends_with(concat!(r#""ttlMs":3600000,"cacheScope":"public","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"memprove","title":"memprove","version":""#, env!("CARGO_PKG_VERSION"), r#""}}}}"#)), "{}", out[0]);
         assert_eq!(
             out[1],
             r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Invalid params","data":{"missing":["io.modelcontextprotocol/protocolVersion"],"supported":["2026-07-28"],"initialize":["2025-11-25","2025-06-18"]}}}"#
         );
-        assert!(out[2].contains(r#""result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"memprove","title":"memprove","version":"0.1.0"},"instructions":"#), "{}", out[2]);
+        assert!(out[2].contains(concat!(r#""result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"memprove","title":"memprove","version":""#, env!("CARGO_PKG_VERSION"), r#""},"instructions":"#)), "{}", out[2]);
         assert!(!out[2].contains("resultType") && !out[2].contains("_meta"));
         assert!(
             out[3].starts_with(r#"{"jsonrpc":"2.0","id":4,"result":{"tools":[{"name":"pack""#),
@@ -787,7 +787,12 @@ mod tests {
         };
         let done = |id: u32| {
             format!(
-                r#"{{"jsonrpc":"2.0","id":{id},"result":{{"resultType":"complete","_meta":{{"io.modelcontextprotocol/subscriptionId":{id},"io.modelcontextprotocol/serverInfo":{{"name":"memprove","title":"memprove","version":"0.1.0"}}}}}}}}"#
+                concat!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"resultType":"complete","_meta":{{"io.modelcontextprotocol/subscriptionId":{id},"io.modelcontextprotocol/serverInfo":{{"name":"memprove","title":"memprove","version":""#,
+                    env!("CARGO_PKG_VERSION"),
+                    r#""}}}}}}}}"#
+                ),
+                id = id
             )
         };
         assert_eq!(out, [ack(7), ack(8), done(7), done(8)]);
@@ -826,7 +831,11 @@ mod tests {
         );
         assert_eq!(
             out[3],
-            r#"{"jsonrpc":"2.0","id":4,"result":{"resultType":"complete","content":[{"type":"text","text":"the argument budget does not match the tool's inputSchema; nothing was sent"}],"structuredContent":{"task_id":null,"session_id":null,"failure":"invalid_arguments","parameter":"budget"},"isError":true,"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"memprove","title":"memprove","version":"0.1.0"}}}}"#
+            concat!(
+                r#"{"jsonrpc":"2.0","id":4,"result":{"resultType":"complete","content":[{"type":"text","text":"the argument budget does not match the tool's inputSchema; nothing was sent"}],"structuredContent":{"task_id":null,"session_id":null,"failure":"invalid_arguments","parameter":"budget"},"isError":true,"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"memprove","title":"memprove","version":""#,
+                env!("CARGO_PKG_VERSION"),
+                r#""}}}}"#
+            )
         );
         assert!(
             out[4].contains(r#""failure":"invalid_arguments","parameter":null"#),

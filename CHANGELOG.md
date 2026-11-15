@@ -3,7 +3,10 @@
 Each release, with its binaries, is on
 https://github.com/memprove/memprove/releases.
 
-## Unreleased
+## 0.2.0 · 2026-11-15
+
+Adds `memprove eval`: run a coding agent on the repository's own tasks,
+and measure whether memprove's memory helps it.
 
 ### Added
 
@@ -18,8 +21,10 @@ https://github.com/memprove/memprove/releases.
   its last line is a cargo-style summary, so `memprove run --test-format
   cargo` records a run as test Evidence.
 - `memprove eval run --memory pack` gives every trial's agent the Context
-  Pack the SessionStart hook would give a new session, ahead of its
-  prompt, kept as `pack.md` and recorded as `run.json` `memory_given`;
+  Pack the SessionStart hook would give a new session (without the
+  takeover hint and the `Can:` lines, since the agent is not to run
+  memprove), ahead of its prompt, kept as `pack.md` and recorded as
+  `run.json` `memory_given`;
   `memprove eval ab` runs the tasks without memory and with that Pack and
   reports the second against the first. `--baseline` also takes a run
   directory. The agent's `MEMPROVE_CONFIG_DIR` is an empty directory in
