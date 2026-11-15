@@ -243,12 +243,15 @@ starts without a Pack.
 
 `--memory pack` gives every trial's agent the Context Pack memprove would inject into a new session in the repository
 now: the SessionStart hook's rules for choosing the Task and its budget, read once when the run starts (read only:
-`getTaskCapsule` and `listTasks`). The agent's prompt is a short note (this is memprove's Context Pack for the
-repository, read-only here, do not run memprove commands; the commits it names are not in the working copy, which
-holds the files of the base commit as one new commit), the Pack in a `text` block, then `Task:` and the task's own
-prompt; every agent gets it this way, not through its own hook. The run directory keeps the Pack as `pack.md`, and
-`run.json` records it as `memory_given` (`sha256`, `bytes`; `null` without it). When the Pack cannot be read, the run
-stops before any trial with exit code 3 and says why. `--memory pack` and `--no-memory` cannot be used together.
+`getTaskCapsule` and `listTasks`). What the Pack says a reader can do with memprove is left out, since the agent is not
+to run memprove: the hint at the end of the line of a Session that has not ended (how to end it before taking over)
+and the `Can:` lines; the `Digest:` line is written again for the lines kept. The agent's prompt is a short note (this
+is memprove's Context Pack for the repository, read-only here, do not run memprove commands; the commits it names are
+not in the working copy, which holds the files of the base commit as one new commit), the Pack in a `text` block, then
+`Task:` and the task's own prompt; every agent gets it this way, not through its own hook. The run directory keeps the
+Pack as `pack.md`, and `run.json` records it as `memory_given` (`sha256`, `bytes`; `null` without it). When the Pack
+cannot be read, the run stops before any trial with exit code 3 and says why. `--memory pack` and `--no-memory` cannot
+be used together.
 
 `eval ab` answers "does this repository's memory make the agent better at its own tasks?" in one command:
 

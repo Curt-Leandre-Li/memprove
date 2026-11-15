@@ -1,7 +1,9 @@
 //! U23-F1, through the real binaries: `memprove eval ab` runs a task only
 //! memory can pass without memory and then with memprove's Pack, read from
 //! a running daemon of a default installation; the Pack it gives is, byte
-//! for byte, the one the `SessionStart` hook gives a new session, and the
+//! for byte, the one the `SessionStart` hook gives a new session but for
+//! what it says a reader can do with memprove (U23-F4-3: the takeover hint
+//! and the `Can:` lines, with the `Digest:` line written again), and the
 //! two runs write nothing to the ledger, the home, or the worktree.
 
 mod u1e_support;
@@ -14,6 +16,7 @@ use std::{
     process::{Output, Stdio},
 };
 
+use memprove_domain::Sha256Digest;
 use memprove_eval::runner::{self, AGENT_CONFIG_DIR, PACK_FILE};
 use memprove_protocol::strict_json::{JsonValue, parse_strict};
 use u1e_support::{
@@ -146,6 +149,40 @@ fn pack_of(hook: &str) -> &str {
     &hook[start..end]
 }
 
+/// The takeover hint's start (`memprove_domain::pack_takeover_hint`).
+const TAKEOVER: &str = "; end it before taking over: ";
+
+/// `pack` as `eval` gives it to an agent (U23-F4-3): each `Session ` line
+/// cut where its takeover hint starts, no `Can:` line, and the `Digest:`
+/// line written for the lines kept (the SHA-256 of every line before it).
+fn for_the_agent(pack: &str) -> String {
+    let kept: String = pack
+        .lines()
+        .filter(|line| !line.starts_with("Can: ") && !line.starts_with("Digest: "))
+        .map(|line| match line.find(TAKEOVER) {
+            Some(at) if line.starts_with("Session ") => &line[..at],
+            _ => line,
+        })
+        .map(|line| line.to_owned() + "\n")
+        .collect();
+    let digest = Sha256Digest::of_bytes(kept.as_bytes());
+    format!("{kept}Digest: sha256:{digest}\n")
+}
+
+/// The Pack given (`pack`) is the hook's (`hook`, which has a takeover hint
+/// and `Can:` lines) as `eval` gives it to an agent, and still has the
+/// Session's line and the fact.
+fn assert_given(pack: &str, hook: &str) {
+    assert!(pack_of(hook).contains(TAKEOVER), "{hook}");
+    assert!(pack_of(hook).contains("\nCan: "), "{hook}");
+    assert_eq!(pack, for_the_agent(pack_of(hook)), "{hook}");
+    assert!(!pack.contains(TAKEOVER), "{pack}");
+    assert!(!pack.contains("session end"), "{pack}");
+    assert!(!pack.contains("\nCan: "), "{pack}");
+    assert!(pack.contains(" not ended (started "), "{pack}");
+    assert!(pack.contains("the answer is 42"), "{pack}");
+}
+
 /// The run directories `eval ab` printed, without memory first.
 fn run_dirs(printed: &str) -> Vec<PathBuf> {
     printed
@@ -232,9 +269,10 @@ fn u23_f1_eval_ab_gives_the_pack_a_new_session_gets_and_it_fixes_the_task() {
         panic!("two run directories: {printed}");
     };
 
-    // The Pack given is the one the hook gives a new session here. (It names
-    // the program that wrote it, so the probe called from this test process
-    // would differ in that path alone.)
+    // The Pack given is the one the hook gives a new session here, without
+    // what it says a reader can do with memprove (U23-F4-3): the hint on how
+    // to end the Session `begin` opened, which named the program that wrote
+    // it, and the `Can:` lines.
     let hook = install.memprove(
         &["hook", "session-start"],
         &format!(
@@ -243,8 +281,7 @@ fn u23_f1_eval_ab_gives_the_pack_a_new_session_gets_and_it_fixes_the_task() {
         ),
     );
     let pack = fs::read_to_string(with.join(PACK_FILE)).unwrap();
-    assert_eq!(pack, pack_of(&hook), "{hook}");
-    assert!(pack.contains("the answer is 42"), "{pack}");
+    assert_given(&pack, &hook);
     let given = runner::read_run(with).unwrap().memory_given.unwrap();
     assert_eq!(given.bytes, pack.len() as u64);
     assert_eq!(runner::read_run(without).unwrap().memory_given, None);
