@@ -150,6 +150,9 @@ struct Context<'a> {
     agent: &'a dyn Agent,
     run_dir: &'a Path,
     worktrees: &'a Path,
+    /// The run's task files and check patches, relative to the repository
+    /// root: left out of every trial's working copy.
+    hidden: Vec<PathBuf>,
     /// What goes ahead of every prompt: the framed Pack, or nothing.
     preamble: String,
     /// The agent's added variables.
@@ -231,6 +234,7 @@ pub fn run_suite(
         agent,
         run_dir: &run_dir,
         worktrees: &worktrees,
+        hidden: hidden_paths(tasks),
         preamble,
         agent_env: vec![(
             AGENT_CONFIG_ENV.to_owned(),
@@ -240,7 +244,6 @@ pub fn run_suite(
     let mut results = run_jobs(&context, &jobs);
     results.sort_by_key(|(index, _)| *index);
     let _ = fs::remove_dir(&worktrees);
-    let _ = git::git(root, &["worktree", "prune"]);
     let record = RunRecord {
         run_id,
         started_at: time::rfc3339(started),
@@ -264,6 +267,15 @@ pub fn run_suite(
     let path = run_dir.join("run.json");
     fs::write(&path, record.to_json()).map_err(|error| EvalError::io(&path, error))?;
     Ok((record, run_dir))
+}
+
+/// The run's task files and check patches, relative to the repository
+/// root: kept out of every trial's working copy.
+fn hidden_paths(tasks: &[(Task, TaskRef)]) -> Vec<PathBuf> {
+    tasks
+        .iter()
+        .flat_map(|(task, _)| std::iter::once(task.source.clone()).chain(task.check_patch.clone()))
+        .collect()
 }
 
 fn run_jobs(context: &Context<'_>, jobs: &[Job<'_>]) -> Vec<(usize, TrialResult)> {
@@ -356,14 +368,20 @@ fn run_trial(context: &Context<'_>, job: &Job<'_>) -> TrialResult {
         }
     };
     let name = format!("{}-{}", task.id, job.trial);
-    let tree = match Worktree::create(&context.options.repo_root, context.worktrees, &name, &base) {
+    let tree = match Worktree::isolated(
+        &context.options.repo_root,
+        context.worktrees,
+        &name,
+        &base,
+        &context.hidden,
+    ) {
         Ok(tree) => tree,
         Err(error) => {
             result.reason = Some(format!("cannot create the trial's worktree: {error}"));
             return result;
         }
     };
-    in_worktree(context, task, &base, &tree, &log_dir, &mut result);
+    in_worktree(context, task, &tree, &log_dir, &mut result);
     if !context.options.keep_worktrees
         && let Err(error) = tree.remove()
     {
@@ -375,7 +393,6 @@ fn run_trial(context: &Context<'_>, job: &Job<'_>) -> TrialResult {
 fn in_worktree(
     context: &Context<'_>,
     task: &Task,
-    base: &str,
     tree: &Worktree,
     log_dir: &Path,
     result: &mut TrialResult,
@@ -421,7 +438,7 @@ fn in_worktree(
     if failed_to_start {
         return;
     }
-    match tree.diff(base, &log_dir.join("agent.diff")) {
+    match tree.diff(&log_dir.join("agent.diff")) {
         Ok(diff) => result.diff = diff,
         Err(error) => {
             result.reason = Some(format!("cannot diff the agent's changes: {error}"));
@@ -429,7 +446,7 @@ fn in_worktree(
         }
     }
     if let Some(patch) = &task.check_patch
-        && let Err(error) = tree.restore_and_apply(base, &context.options.repo_root.join(patch))
+        && let Err(error) = tree.restore_and_apply(&context.options.repo_root.join(patch))
     {
         result.outcome = Outcome::PatchFailed;
         result.reason = Some(format!(

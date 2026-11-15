@@ -119,16 +119,17 @@ six scenarios and scores the archive.
 
 ## Evaluating your agent
 
-`memprove eval` gives a coding agent (Claude Code, Codex, or any program)
-this repository's own tasks, each in a Git worktree of its own at a base
-commit, and judges each only by the exit code of its check command, with
-hidden tests applied after the agent. Runs are compared with a baseline
-committed under `evals/`, and `memprove eval gate` fails CI when a change
-of model, prompt or memory makes the agent worse. `memprove eval ab`
-runs the tasks without memory and then with memprove's Context Pack, and
-shows which tasks the memory fixed or broke. `memprove eval init` sets a
-repository up and `memprove eval mine` writes tasks from its history;
-`docs/eval.md` has the rest.
+`memprove eval` gives a coding agent (Claude Code, Codex, or any
+program) this repository's own tasks, each in a fresh Git repository
+holding the files of a base commit, and judges each only by the exit
+code of its check command, with hidden tests applied after the agent.
+Runs are compared with a baseline committed under `evals/`, and
+`memprove eval gate` fails CI when a change of model, prompt or memory
+makes the agent worse. `memprove eval ab` runs the tasks without memory
+and then with memprove's Context Pack, and shows which tasks the memory
+fixed or broke. `memprove eval init` sets a repository up and
+`memprove eval mine` writes tasks from its history; `docs/eval.md` has
+the rest.
 
 ## Status
 

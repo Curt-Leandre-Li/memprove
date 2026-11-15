@@ -54,9 +54,10 @@ Usage:
 
 A task file (evals/<id>.json, schema memprove.eval.task.v1) names a base commit, a
 prompt, an optional setup, a check command, and an optional check patch: tests applied
-after the agent, so it never sees them. `run` gives every task to the agent in its own
-Git worktree at the base commit, then runs the check there; exit code 0 is `passed`,
-and nothing else judges. The run is written to run.json under
+after the agent, so it never sees them. `run` gives every task to the agent in a Git
+repository of its own with one commit, the base commit's files without the run's task
+files and check patches, then runs the check there; exit code 0 is `passed`, and
+nothing else judges. The run is written to run.json under
 <git common dir>/memprove-eval/runs/<run id>/, with every log and the agent's diff.
 `ab` runs the tasks twice, without memory and with memprove's Context Pack, and
 compares the two.
@@ -152,7 +153,7 @@ const HELP: &[Help] = &[
             ),
             (
                 "--keep-worktrees",
-                "keep each trial's worktree (under the system's temporary directory)",
+                "keep each trial's working copy (under the system's temporary directory)",
             ),
             (
                 "--memory <MODE>",
@@ -164,7 +165,7 @@ const HELP: &[Help] = &[
                 "the command agent: {prompt_file} and {workdir} in its arguments are replaced",
             ),
         ],
-        notes: "The agent runs without asking for permissions, in a worktree of its own; run it\n\
+        notes: "The agent runs without asking for permissions, in a working copy of its own; run it\n\
                 where that is acceptable, such as CI. The last line is in the format of cargo\n\
                 test's summary, one case per trial, so `memprove run --test-format cargo --\n\
                 memprove eval run` records the run as test Evidence. The agent's\n\

@@ -9,9 +9,11 @@ https://github.com/memprove/memprove/releases.
 
 - `memprove eval` (crate `memprove-eval`): runs a coding agent on the
   repository's own tasks (`evals/*.json`, schema
-  `memprove.eval.task.v1`), each trial in a detached Git worktree at the
-  task's base commit, and judges it by the check command's exit code
-  alone, with an optional check patch applied after the agent. Writes
+  `memprove.eval.task.v1`), each trial in a new Git repository whose one
+  commit holds the files of the task's base commit without the run's
+  task files and check patches (no history, no other branch), and judges
+  it by the check command's exit code alone, with an optional check patch
+  applied after the agent. Writes
   `run.json` and every log under `<git common dir>/memprove-eval/runs/`;
   its last line is a cargo-style summary, so `memprove run --test-format
   cargo` records a run as test Evidence.
