@@ -1,7 +1,7 @@
 //! `git` as a subprocess: the crate reads and changes repositories only
 //! through it.
 
-use std::{path::Path, process::Command};
+use std::{ffi::OsStr, path::Path, process::Command};
 
 use crate::EvalError;
 
@@ -11,11 +11,24 @@ use crate::EvalError;
 /// [`EvalError::Spawn`] when `git` cannot be started, [`EvalError::Git`]
 /// when it exits non-zero.
 pub fn git(repo: &Path, args: &[&str]) -> Result<String, EvalError> {
+    git_with_env(repo, &[], args)
+}
+
+/// [`git`] with `env` added to its environment.
+///
+/// # Errors
+/// As [`git`].
+pub fn git_with_env(
+    repo: &Path,
+    env: &[(&str, &OsStr)],
+    args: &[&str],
+) -> Result<String, EvalError> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .envs(env.iter().copied())
         .output()
         .map_err(|source| EvalError::Spawn {
             program: "git".to_owned(),

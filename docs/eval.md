@@ -2,9 +2,9 @@
 
 `memprove eval` answers one question: after a change to how a coding agent works in this repository (a new model, a
 new prompt, an edited `CLAUDE.md` or `AGENTS.md`, different memory), does the agent still do this repository's real
-work? It gives the repository's own tasks to the agent, each in its own Git worktree, and judges each by the exit code
-of the task's check command alone. Runs are kept as `run.json`, compared with a baseline committed to the repository,
-and gated in CI.
+work? It gives the repository's own tasks to the agent, each in a fresh Git repository holding the files of the task's
+base commit, and judges each by the exit code of the task's check command alone. Runs are kept as `run.json`, compared
+with a baseline committed to the repository, and gated in CI.
 
 ```bash
 memprove eval init                      # evals/, a CI workflow, five lines in AGENTS.md / CLAUDE.md
@@ -143,10 +143,10 @@ memprove eval gate     [<run dir>|latest] --baseline FILE|RUN_DIR [--max-drop <p
                        [--allow-regressions]
 ```
 
-`run` reads the tasks (`evals/` by default; `baseline.json` is not a task) and runs every trial in its own detached
-worktree at the task's base: setup, the agent with the prompt, then the check patch and the check. Each trial ends as
-one of `passed`, `failed`, `check_timeout`, `setup_failed`, `patch_failed`, or `error` (the trial could not be run:
-not the agent's fault, counted as not passed and reported apart). The run directory
+`run` reads the tasks (`evals/` by default; `baseline.json` is not a task) and runs every trial in a working copy of
+its own at the task's base (see "What the agent sees"): setup, the agent with the prompt, then the check patch and the
+check. Each trial ends as one of `passed`, `failed`, `check_timeout`, `setup_failed`, `patch_failed`, or `error` (the
+trial could not be run: not the agent's fault, counted as not passed and reported apart). The run directory
 `<git common dir>/memprove-eval/runs/<run id>/` holds `run.json` and each trial's agent and check output and the
 agent's diff; it is inside `.git`, so it is never an untracked file. `latest` is the run directory with the greatest
 name. See "Agents" for what each agent is started with.
@@ -165,8 +165,8 @@ failed, 2 usage error, 3 the command could not be done (a file, `git`, the agent
 
 ## Agents
 
-Each agent runs in the trial's worktree with the prompt; its output goes to `agent.out` and `agent.err`, the prompt to
-`prompt.md`, in the trial's directory. `--model` and each `--agent-arg` are passed on.
+Each agent runs in the trial's working copy with the prompt; its output goes to `agent.out` and `agent.err`, the
+prompt to `prompt.md`, in the trial's directory. `--model` and each `--agent-arg` are passed on.
 
 - `claude-code`: `claude -p --output-format json [--model M] --permission-mode bypassPermissions
   --no-session-persistence <agent args> -- <prompt>`. Tokens, turns and `total_cost_usd` are read from its JSON
@@ -174,9 +174,8 @@ Each agent runs in the trial's worktree with the prompt; its output goes to `age
   it for you.
 - `codex`: `codex exec --json [--model M] --sandbox workspace-write --ephemeral -C <worktree> <agent args> --
   <prompt>`. Tokens are summed over its `turn.completed` events; Codex reports no cost. Its `workspace-write` sandbox
-  has no network by default and cannot write the worktree's Git directory, so the agent cannot commit (the diff
-  includes uncommitted changes, so this does not change the outcome); `--agent-arg
-  --dangerously-bypass-approvals-and-sandbox` lifts both.
+  has no network by default; `--agent-arg --dangerously-bypass-approvals-and-sandbox` lifts it. Whether the agent
+  commits does not change the outcome: the diff holds its commits and its uncommitted changes alike.
 - `command`: `--agent command -- <program> <args>...` runs any program, with `{prompt_file}` and `{workdir}` replaced
   in its arguments and `MEMPROVE_EVAL_PROMPT_FILE`, `MEMPROVE_EVAL_WORKDIR`, `MEMPROVE_EVAL_USAGE_FILE` (and
   `MEMPROVE_EVAL_MODEL` with `--model`) in its environment. A program that writes the usage file (members of
@@ -189,10 +188,24 @@ evaluation: memprove's `MEMPROVE_CLIENT_SESSION`, `MEMPROVE_AGENT_NAME`, `MEMPRO
 `MEMPROVE_PARENT_SESSION` (and their `CONTINUITY_` forms), Claude Code's session variables (`CLAUDECODE`,
 `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_REMOTE_SESSION_ID` and the like) and Codex's `CODEX_THREAD_ID`. The agent's
 `MEMPROVE_CONFIG_DIR` is an empty directory of the run (`agent-config/`), so a memprove command, hook or MCP server
-that finds its installation through that variable finds none. One given `--config-dir` (as `memprove init` writes
-the hook into `.claude/settings.local.json`) still finds the installation, but a trial's worktree is not a Workspace
-with a memprove context, so the hook injects no Pack there and a command cannot record to a Session; the agent gets
-no Pack but the one `--memory pack` gives.
+that finds its installation through that variable finds none. One given `--config-dir` (as `memprove init` writes the
+hook into `.claude/settings.local.json`) still finds the installation, but a trial's working copy is not a Workspace
+with a memprove context, so the hook injects no Pack there and a command cannot record to a Session; the agent gets no
+Pack but the one `--memory pack` gives.
+
+## What the agent sees
+
+A trial's working copy is a new Git repository under the system's temporary directory with one commit on `main`: the
+files of the task's base commit, without the task file and check patch of any task in the run (a directory they leave
+empty goes too). It has no history, no other branch or tag, and no link back to the repository under evaluation, so
+neither its files nor `git log --all`, `git show` or `git branch --all` show a check, a task file, or a later commit
+such as the one a mined task was made from. The trial's `base` in `run.json` is still the task's base commit, and
+`agent.diff` is the agent's change against the working copy's one commit. The repository under evaluation is read and
+not changed: its index, worktrees and refs stay as they were.
+
+Without history, `git log` and `git blame` show nothing older than the trial, and a setup or check that needs history
+or tags (`git describe`) does not work there. This hides the answer from a look at the working copy and its
+repository; it is not a sandbox (see "Limits of v0").
 
 ## CI
 
@@ -258,7 +271,8 @@ port, a name, or a decision. Trials of a real agent vary; use `--trials` so that
   reports nothing, so a run's cost leaves out its timed-out trials.
 - The agent gets memprove's Pack only with `--memory pack`, as text ahead of its prompt, read once when the run
   starts; it reads no other memory and records none during a trial (see "Does memory help?").
-- The agent's worktree shares the repository's object store, so an agent that looks can find later commits,
-  including the commit a mined task was made from. Tasks measure an agent setup against itself over time; they are
-  not a sealed benchmark.
+- The agent runs as you: it can read any file you can, so one that searches the disk beyond its working copy can
+  still find the repository under evaluation, its check patches and its later commits; and your own configuration
+  under your home directory (`~/.claude`, `~/.codex`) applies to it. Tasks measure an agent setup against itself over
+  time; they are not a sealed benchmark.
 - No model grades the work, no hosted service, no web page.

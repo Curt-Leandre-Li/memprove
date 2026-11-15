@@ -1,8 +1,9 @@
 //! `memprove eval`: does an agent setup still do this repository's real
 //! work? A task names a starting commit, a prompt and an acceptance
 //! command; a run gives each task to a coding agent (Claude Code, Codex,
-//! or any program) in its own Git worktree, and the acceptance command's
-//! exit code alone says whether it passed. Runs are compared with a
+//! or any program) in a Git repository of its own that holds the files of
+//! that commit and nothing of the check, and the acceptance command's exit
+//! code alone says whether it passed. Runs are compared with a
 //! baseline, gated in CI, and reported with the memory the agent was given
 //! that memprove no longer holds as verified.
 //!

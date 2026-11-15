@@ -601,15 +601,16 @@ this version.
 
 ## Evaluating an agent setup (`memprove eval`)
 
-`memprove eval` checks whether an agent setup (model, prompt, `CLAUDE.md`, memory) still does this repository's
-real work. A task file under `evals/` names a base commit, a prompt, an optional setup, a check command and an
-optional check patch (tests applied after the agent, so it never sees them); `memprove eval run` gives each task to
-the agent in its own Git worktree and judges it by the check's exit code alone. `memprove eval init` writes a first
-task, a CI workflow and a short note for agents; `memprove eval mine` turns commits that changed tests and code into
-tasks. Record a run as test Evidence with `memprove run --test-format cargo -- memprove eval run evals/`: its last
-line counts one case per trial. `memprove eval ab` runs the tasks without memory and then with the Context Pack this
-repository's memprove would give a new session, and reports the change in pass rate task by task; `--memory pack`
-gives a single run that Pack. `memprove eval --help` lists the commands; `docs/eval.md` is the manual.
+`memprove eval` checks whether an agent setup (model, prompt, `CLAUDE.md`, memory) still does this repository's real
+work. A task file under `evals/` names a base commit, a prompt, an optional setup, a check command and an optional
+check patch (tests applied after the agent, so it never sees them); `memprove eval run` gives each task to the agent
+in a fresh Git repository holding the base commit's files (no history, no task file, no check patch) and judges it
+by the check's exit code alone. `memprove eval init` writes a first task, a CI workflow and a short note for agents;
+`memprove eval mine` turns commits that changed tests and code into tasks. Record a run as test Evidence with
+`memprove run --test-format cargo -- memprove eval run evals/`: its last line counts one case per trial.
+`memprove eval ab` runs the tasks without memory and then with the Context Pack this repository's memprove would
+give a new session, and reports the change in pass rate task by task; `--memory pack` gives a single run that Pack.
+`memprove eval --help` lists the commands; `docs/eval.md` is the manual.
 
 ## Known limits
 
@@ -621,3 +622,5 @@ gives a single run that Pack. `memprove eval --help` lists the commands; `docs/e
 - `memprove eval` gives the agent a Pack only with `--memory pack` (or in the second run of `eval ab`): a trial
   worktree has no memprove context of its own, and the agent's `MEMPROVE_CONFIG_DIR` is an empty directory. The
   Pack is read once when the run starts and is given as text ahead of the prompt, not through the agent's own hook.
+- A `memprove eval` trial's working copy has no Git history and none of the run's task files or check patches, but
+  the agent is not sandboxed: it can read any file its user can, and the user's own agent configuration applies to it.
