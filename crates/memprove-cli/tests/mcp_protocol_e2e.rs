@@ -40,7 +40,11 @@ const TOOLS: [&str; 10] = [
     "end",
     "complete",
 ];
-const SERVER_INFO: &str = r#"{"name":"memprove","title":"memprove","version":"0.1.0"}"#;
+const SERVER_INFO: &str = concat!(
+    r#"{"name":"memprove","title":"memprove","version":""#,
+    env!("CARGO_PKG_VERSION"),
+    r#""}"#
+);
 
 /// A running `memprove mcp serve` and its streams.
 struct Mcp {
