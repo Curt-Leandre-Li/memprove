@@ -51,7 +51,7 @@ memprove eval init [--agent claude-code|codex] [--no-workflow] [--dry-run]
 
 Running `init` again changes nothing. It replaces its block in place, and it never overwrites `evals/README.md`,
 `evals/smoke.json` or the workflow once they hold something else: it reports them as kept, so edits are safe.
-`--dry-run` lists what would be written and writes nothing.
+`--dry-run` lists the files that would be written and writes nothing; it does not print their contents.
 
 ## Tasks
 

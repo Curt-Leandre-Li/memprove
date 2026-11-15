@@ -3,6 +3,14 @@
 Each release, with its binaries, is on
 https://github.com/memprove/memprove/releases.
 
+## Unreleased
+
+### Fixed
+
+- `memprove eval init --help` and `memprove eval mine --help` now say
+  that `--dry-run` lists the files that would be written; it never
+  printed their contents.
+
 ## 0.2.0 · 2026-11-15
 
 Adds `memprove eval`: run a coding agent on the repository's own tasks,

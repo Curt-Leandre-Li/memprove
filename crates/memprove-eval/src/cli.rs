@@ -88,7 +88,10 @@ const HELP: &[Help] = &[
                 "--no-workflow",
                 "do not write .github/workflows/memprove-eval.yml",
             ),
-            ("--dry-run", "print what would be written; write nothing"),
+            (
+                "--dry-run",
+                "list the files that would be written; write nothing",
+            ),
         ],
         notes: "Writes evals/README.md (how to write a task, addressed to the coding agent), a\n\
                 first task when the test command can be guessed, the CI workflow, and a note of\n\
@@ -112,7 +115,10 @@ const HELP: &[Help] = &[
                 "--verify",
                 "keep only tasks whose check fails at the base with the patch and passes at the commit",
             ),
-            ("--dry-run", "print what would be written; write nothing"),
+            (
+                "--dry-run",
+                "list the files that would be written; write nothing",
+            ),
         ],
         notes: "A commit that changed tests and code becomes a task: its parent is the base, its\n\
                 message the prompt, and its test changes the check patch. A task file that exists\n\
