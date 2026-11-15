@@ -234,8 +234,9 @@ pub struct TrialResult {
 }
 
 /// One statement memprove held for the repository when the run started,
-/// with its verdict then (see [`crate::MemoryProbe`]). v0 does not give
-/// these statements to the agent: a trial worktree has no memprove context.
+/// with its verdict then (see [`crate::MemoryProbe`]). The agent gets
+/// them only in the Pack of a `--memory pack` run: a trial worktree has no
+/// memprove context of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryNote {
     /// The statement's label in the Pack, for example `#4`.
@@ -248,6 +249,16 @@ pub struct MemoryNote {
     pub text: String,
     /// The commit it is bound to, when it is.
     pub commit: Option<String>,
+}
+
+/// The Context Pack a run gave the agent: the same text in every trial,
+/// kept as `pack.md` in the run directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackGiven {
+    /// SHA-256 of the Pack's text, hex.
+    pub sha256: String,
+    /// Its length in bytes.
+    pub bytes: u64,
 }
 
 /// The repository a run ran in.
@@ -300,6 +311,9 @@ pub struct RunRecord {
     /// Why memprove's statements could not be read (the probe's sentence);
     /// `None` when they were read or there was no probe.
     pub memory_unread: Option<String>,
+    /// The Pack every trial's agent was given (`--memory pack`); `None`
+    /// when the agent was given no memory.
+    pub memory_given: Option<PackGiven>,
 }
 
 /// Totals over a run's trials.
@@ -409,6 +423,15 @@ impl RunRecord {
                 "memory_unread",
                 Out::opt(self.memory_unread.as_deref(), Out::str),
             ),
+            (
+                "memory_given",
+                Out::opt(self.memory_given.as_ref(), |given| {
+                    Out::Object(vec![
+                        ("sha256", Out::str(&given.sha256)),
+                        ("bytes", Out::uint(given.bytes)),
+                    ])
+                }),
+            ),
             ("summary", summary_out(&summary)),
         ])
         .render()
@@ -462,6 +485,16 @@ impl RunRecord {
             results: indexed(&top, "results", result_in)?,
             memory: indexed(&top, "memory", memory_in)?,
             memory_unread: top.opt_str("memory_unread")?.map(str::to_owned),
+            memory_given: top
+                .get("memory_given")
+                .map(|value| {
+                    let given = Reader::new(value, path, "memory_given")?;
+                    Ok::<_, EvalError>(PackGiven {
+                        sha256: given.str("sha256")?.to_owned(),
+                        bytes: given.u64("bytes")?,
+                    })
+                })
+                .transpose()?,
         })
     }
 }
@@ -767,6 +800,7 @@ pub(crate) mod fixtures {
                 commit: Some("89abcdef".to_owned()),
             }],
             memory_unread: None,
+            memory_given: None,
         }
     }
 }
@@ -785,6 +819,10 @@ mod tests {
         let mut unread = run;
         unread.memory.clear();
         unread.memory_unread = Some("no Task is in progress".to_owned());
+        unread.memory_given = Some(PackGiven {
+            sha256: "ab".repeat(32),
+            bytes: 812,
+        });
         let back = RunRecord::from_json(&unread.to_json(), None).expect("reads back");
         assert_eq!(back, unread);
     }

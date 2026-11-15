@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Agent, AgentEnd, AgentRequest, AgentSpec, CommandSpec, DiffStat, EvalError, MemoryProbe,
-    Outcome, RepositoryInfo, RunRecord, Task, TaskRef, TrialResult, git,
+    Outcome, PackGiven, RepositoryInfo, RunRecord, Task, TaskRef, TrialResult, git,
     process::{self, Exit, Invocation},
     time,
     workspace::Worktree,
@@ -43,7 +43,40 @@ pub struct RunOptions {
     pub keep_worktrees: bool,
     /// Print one line per finished trial on standard error.
     pub progress: bool,
+    /// Give every trial's agent the Context Pack the probe reads when the
+    /// run starts (`--memory pack`), ahead of the task's prompt; the run
+    /// fails before any trial when there is no probe or it cannot read
+    /// one.
+    pub give_pack: bool,
 }
+
+/// The variable the agent's memprove (its commands and its hook) reads
+/// its configuration from; every run points it at an empty directory, so
+/// that a memprove that finds its installation through it finds none. (One
+/// given `--config-dir` finds the installation, but no memprove context
+/// for the trial's worktree, so its hook gives no Pack there.)
+pub const AGENT_CONFIG_ENV: &str = "MEMPROVE_CONFIG_DIR";
+
+/// The empty configuration directory of a run's agents, in the run
+/// directory.
+pub const AGENT_CONFIG_DIR: &str = "agent-config";
+
+/// The file of the run directory that holds the Pack the agents were
+/// given.
+pub const PACK_FILE: &str = "pack.md";
+
+/// What the agent reads before the task's prompt when it is given the
+/// Pack (`{pack}` is the Pack's text).
+pub const PACK_PREAMBLE: &str = "memprove, the memory of this repository's earlier sessions, \
+gives you its Context Pack below, as it would at the start of a session. Use it as background \
+for the task. It is read-only here: do not run memprove commands.
+
+```text
+{pack}```
+
+Task:
+
+";
 
 /// The default `out_root` of `repo_root`: `memprove-eval/runs` in its Git
 /// common directory, so that run files are never untracked files of any
@@ -117,6 +150,10 @@ struct Context<'a> {
     agent: &'a dyn Agent,
     run_dir: &'a Path,
     worktrees: &'a Path,
+    /// What goes ahead of every prompt: the framed Pack, or nothing.
+    preamble: String,
+    /// The agent's added variables.
+    agent_env: Vec<(String, String)>,
 }
 
 /// Runs `tasks` with `agent` and writes `<out_root>/<run_id>/run.json`.
@@ -136,15 +173,43 @@ pub fn run_suite(
     let run_id = format!("{}-{}", time::compact(started), nonce(started));
     let run_dir = options.out_root.join(&run_id);
     fs::create_dir_all(&run_dir).map_err(|error| EvalError::io(&run_dir, error))?;
-    let (memory, memory_unread) = match memory.map(|probe| probe.notes(root)) {
-        Some(Ok(notes)) => (notes, None),
+    let (memory, pack, memory_unread) = match memory.map(|probe| probe.read(root)) {
+        Some(Ok(read)) => (read.notes, Some(read.pack), None),
         Some(Err(reason)) => {
+            if options.give_pack {
+                let _ = fs::remove_dir(&run_dir);
+                return Err(EvalError::invalid(
+                    None,
+                    format!("--memory pack: memprove's memory was not read: {reason}"),
+                ));
+            }
             if options.progress {
                 eprintln!("memprove eval: memprove's memory was not read: {reason}");
             }
-            (Vec::new(), Some(reason))
+            (Vec::new(), None, Some(reason))
         }
-        None => (Vec::new(), None),
+        None if options.give_pack => {
+            let _ = fs::remove_dir(&run_dir);
+            return Err(EvalError::invalid(
+                None,
+                "--memory pack needs memprove's memory, and this build reads none",
+            ));
+        }
+        None => (Vec::new(), None, None),
+    };
+    let agent_config = run_dir.join(AGENT_CONFIG_DIR);
+    create_private_dir(&agent_config)?;
+    let (preamble, memory_given) = match pack.filter(|_| options.give_pack) {
+        Some(pack) => {
+            let path = run_dir.join(PACK_FILE);
+            fs::write(&path, &pack).map_err(|error| EvalError::io(&path, error))?;
+            let given = PackGiven {
+                sha256: crate::hex(&Sha256::digest(pack.as_bytes())),
+                bytes: u64::try_from(pack.len()).unwrap_or(u64::MAX),
+            };
+            (PACK_PREAMBLE.replace("{pack}", &pack), Some(given))
+        }
+        None => (String::new(), None),
     };
     let worktrees = std::env::temp_dir().join(format!("memprove-eval-{run_id}"));
     let jobs: Vec<Job<'_>> = tasks
@@ -166,6 +231,11 @@ pub fn run_suite(
         agent,
         run_dir: &run_dir,
         worktrees: &worktrees,
+        preamble,
+        agent_env: vec![(
+            AGENT_CONFIG_ENV.to_owned(),
+            agent_config.to_string_lossy().into_owned(),
+        )],
     };
     let mut results = run_jobs(&context, &jobs);
     results.sort_by_key(|(index, _)| *index);
@@ -189,6 +259,7 @@ pub fn run_suite(
         results: results.into_iter().map(|(_, result)| result).collect(),
         memory,
         memory_unread,
+        memory_given,
     };
     let path = run_dir.join("run.json");
     fs::write(&path, record.to_json()).map_err(|error| EvalError::io(&path, error))?;
@@ -334,11 +405,13 @@ fn in_worktree(
             }
         }
     }
+    let prompt = format!("{}{}", context.preamble, task.prompt);
     let outcome = context.agent.run(&AgentRequest {
         workdir: tree.path(),
-        prompt: &task.prompt,
+        prompt: &prompt,
         timeout: task.agent_timeout,
         log_dir,
+        env: &context.agent_env,
     });
     let failed_to_start = matches!(outcome.end, AgentEnd::FailedToStart(_));
     if let AgentEnd::FailedToStart(detail) = &outcome.end {
@@ -413,6 +486,18 @@ fn ended(exit: Exit, limit: Duration) -> String {
         Exit::Signal(signal) => format!("was ended by signal {signal}"),
         Exit::TimedOut => format!("ran past its limit of {} s", limit.as_secs()),
     }
+}
+
+/// Creates `path`, readable by its owner only (memprove refuses a
+/// configuration directory others can read).
+fn create_private_dir(path: &Path) -> Result<(), EvalError> {
+    use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .and_then(|()| fs::set_permissions(path, fs::Permissions::from_mode(0o700)))
+        .map_err(|error| EvalError::io(path, error))
 }
 
 fn first_line(text: &str) -> &str {

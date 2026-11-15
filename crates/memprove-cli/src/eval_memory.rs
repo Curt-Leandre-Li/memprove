@@ -1,20 +1,22 @@
-//! `memprove eval`'s memory probe: the statements of the Pack memprove
-//! would give an agent that starts in a repository, each with its verdict,
-//! read from the daemon without writing anything.
+//! `memprove eval`'s memory probe: the Context Pack memprove would give an
+//! agent that starts in a repository, and its statements, each with its
+//! verdict, read from the daemon without writing anything.
 //!
 //! The probe finds the Task as the `SessionStart` hook does for a new
 //! client session (Owner condition m, without a client session's
 //! context: the directory's context, else the only Task in progress in the
 //! Workspace), with the same configuration directory, data directory and
 //! token, and reads its Capsule, the source of the Pack the hook, `memprove
-//! resume --pack` and the MCP server give. It sends only `getTaskCapsule`
+//! resume --pack` and the MCP server give, and writes the Pack as the hook
+//! would for a new session (the hook's budget, no Session of the reader's
+//! own), without the hook's opening sentence. It sends only `getTaskCapsule`
 //! and `listTasks`; it begins no Session, writes no checkpoint, and writes
 //! no context or last-Pack file.
 
 use std::path::Path;
 
-use memprove_domain::{PackCapsule, Verdict, word};
-use memprove_eval::{MemoryNote, MemoryProbe};
+use memprove_domain::{PackCapsule, PackError, Verdict, word};
+use memprove_eval::{Memory, MemoryNote, MemoryProbe};
 use memprove_protocol::{
     phase1::OperationId,
     strict_json::{JsonValue, parse_strict},
@@ -22,7 +24,8 @@ use memprove_protocol::{
 
 use crate::{
     context::ContextStore,
-    hook::{self, ChoiceError, Environment, Reader},
+    hook::{self, ChoiceError, Environment, HOOK_PACK_BUDGET, Reader},
+    resume::{self, Own},
 };
 
 /// The only operations the probe sends.
@@ -38,20 +41,31 @@ const ACTIVE_CLASSES: [i64; 5] = [3, 4, 6, 7, 8];
 pub struct DaemonMemory;
 
 impl MemoryProbe for DaemonMemory {
-    fn notes(&self, repo_root: &Path) -> Result<Vec<MemoryNote>, String> {
-        notes_with(&Environment::from_process(), repo_root)
+    fn read(&self, repo_root: &Path) -> Result<Memory, String> {
+        memory_with(&Environment::from_process(), repo_root)
     }
 }
 
-/// The statements memprove would give a new session in `repo_root`, as
-/// [`DaemonMemory`] reads them, with the configuration, data directory and
-/// token that `environment` names (as the `SessionStart` hook reads them).
+/// The statements memprove would give a new session in `repo_root` (see
+/// [`memory_with`]).
+///
+/// # Errors
+/// As [`memory_with`].
+pub fn notes_with(environment: &Environment, repo_root: &Path) -> Result<Vec<MemoryNote>, String> {
+    memory_with(environment, repo_root).map(|memory| memory.notes)
+}
+
+/// The Pack and the statements memprove would give a new session in
+/// `repo_root`, as [`DaemonMemory`] reads them, with the configuration,
+/// data directory and token that `environment` names (as the
+/// `SessionStart` hook reads them).
 ///
 /// # Errors
 /// One sentence saying why memory could not be read: no configuration
 /// directory, no context for the repository, no daemon or token, no Task
-/// in progress, or a Capsule the Pack cannot render.
-pub fn notes_with(environment: &Environment, repo_root: &Path) -> Result<Vec<MemoryNote>, String> {
+/// in progress, or a Capsule the Pack cannot render or that does not fit
+/// the hook's budget.
+pub fn memory_with(environment: &Environment, repo_root: &Path) -> Result<Memory, String> {
     // The reason alone: `memprove eval` says what it is the reason for.
     let not_read = |why: &str| why.to_owned();
     let root = repo_root.canonicalize().map_err(|error| {
@@ -80,8 +94,23 @@ pub fn notes_with(environment: &Environment, repo_root: &Path) -> Result<Vec<Mem
         )),
         error => not_read(&error.clause()),
     })?;
-    notes_of(&chosen.body)
-        .map_err(|why| not_read(&format!("the Capsule of Task {} {why}", chosen.task_id)))
+    let notes = notes_of(&chosen.body)
+        .map_err(|why| not_read(&format!("the Capsule of Task {} {why}", chosen.task_id)))?;
+    let pack =
+        resume::pack(&chosen.body, HOOK_PACK_BUDGET, Own::of(None, None)).map_err(|error| {
+            match error {
+                PackError::OverBudget { needed, .. } => format!(
+                    "the Context Pack of Task {} needs {needed} UTF-16 code units, more than the \
+                 hook's budget of {HOOK_PACK_BUDGET}",
+                    chosen.task_id
+                ),
+                _ => format!(
+                    "the Capsule of Task {} cannot be written as a Context Pack",
+                    chosen.task_id
+                ),
+            }
+        })?;
+    Ok(Memory { notes, pack })
 }
 
 /// The active statements of the Task Capsule `body`, in the Pack's order.

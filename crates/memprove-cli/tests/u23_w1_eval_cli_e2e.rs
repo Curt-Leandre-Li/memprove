@@ -26,7 +26,7 @@ fn u23_w1_eval_help_and_usage_errors() {
     assert_eq!(help.status.code(), Some(0));
     let text = String::from_utf8_lossy(&help.stdout);
     assert!(text.starts_with("memprove eval: "), "{text}");
-    for command in ["init", "mine", "run", "report", "baseline", "gate"] {
+    for command in ["init", "mine", "run", "ab", "report", "baseline", "gate"] {
         let output = memprove(empty.path(), &["eval", command, "--help"]);
         assert_eq!(output.status.code(), Some(0), "{command}");
         let text = String::from_utf8_lossy(&output.stdout);
@@ -43,6 +43,26 @@ fn u23_w1_eval_help_and_usage_errors() {
         "memprove eval run: error: --agent command needs the program after --\n\
          Run `memprove eval run --help` for its options.\n"
     );
+    // U23-F1: --memory takes none or pack, and pack reads memory.
+    for (words, error) in [
+        (
+            &["eval", "run", "--memory", "all"][..],
+            "--memory must be none or pack, not \"all\"",
+        ),
+        (
+            &["eval", "run", "--memory", "pack", "--no-memory"],
+            "--memory pack gives the agent memprove's memory, and --no-memory reads none",
+        ),
+        (
+            &["eval", "ab", "--memory", "pack"],
+            "unknown option --memory",
+        ),
+    ] {
+        let output = memprove(empty.path(), words);
+        assert_eq!(output.status.code(), Some(2), "{words:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(error), "{words:?}: {stderr}");
+    }
     let general = memprove(empty.path(), &["--help"]);
     assert!(
         String::from_utf8_lossy(&general.stdout)
@@ -99,6 +119,7 @@ fn u23_w1_the_summary_line_counts_one_case_per_trial() {
         ],
         memory: Vec::new(),
         memory_unread: None,
+        memory_given: None,
     };
     let line = format!("{}\n", libtest_summary(&run));
     assert_eq!(cargo_case_count(line.as_bytes(), b"", 1), Some(3));

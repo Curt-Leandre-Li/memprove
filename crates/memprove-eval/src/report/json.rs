@@ -2,7 +2,8 @@
 //! content for programs, with the numbers the gate uses.
 //!
 //! Members, in order: `schema`, `run_id`, `started_at`, `finished_at`,
-//! `head`, `agent` (`kind`, `model`, `version`), `summary` (as in
+//! `head`, `agent` (`kind`, `model`, `version`), `memory_given` (the
+//! Pack's `sha256` and `bytes`, or `null`), `summary` (as in
 //! `run.json`), `baseline` (`null` without one; else its `run_id`,
 //! `agent`, `model`, the compared pass counts `shared_tasks`, `before`,
 //! `after` and `delta_permille`, and how many tasks have each change),
@@ -32,6 +33,15 @@ pub(super) fn render(comparison: &Comparison<'_>) -> String {
                 ("model", Out::opt(run.agent.model.as_deref(), Out::str)),
                 ("version", Out::opt(run.agent_version.as_deref(), Out::str)),
             ]),
+        ),
+        (
+            "memory_given",
+            Out::opt(run.memory_given.as_ref(), |given| {
+                Out::Object(vec![
+                    ("sha256", Out::str(&given.sha256)),
+                    ("bytes", Out::uint(given.bytes)),
+                ])
+            }),
         ),
         (
             "summary",

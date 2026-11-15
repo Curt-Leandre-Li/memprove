@@ -135,10 +135,12 @@ was asked), and add the setup the check needs that the guess cannot know (a serv
 ```
 memprove eval run      [<task file or dir>...] [--agent claude-code|codex|command] [--model M]
                        [--agent-arg A]... [--trials N] [--jobs N] [--out-root DIR]
-                       [--keep-worktrees] [--no-memory] [-- <program> <args>...]
-memprove eval report   [<run dir>|latest] [--baseline FILE] [--format markdown|json]
+                       [--keep-worktrees] [--memory none|pack] [--no-memory] [-- <program> <args>...]
+memprove eval ab       [<task file or dir>...] [the options of run but --memory and --no-memory]
+memprove eval report   [<run dir>|latest] [--baseline FILE|RUN_DIR] [--format markdown|json]
 memprove eval baseline [<run dir>|latest] [--write FILE]
-memprove eval gate     [<run dir>|latest] --baseline FILE [--max-drop <percentage points>] [--allow-regressions]
+memprove eval gate     [<run dir>|latest] --baseline FILE|RUN_DIR [--max-drop <percentage points>]
+                       [--allow-regressions]
 ```
 
 `run` reads the tasks (`evals/` by default; `baseline.json` is not a task) and runs every trial in its own detached
@@ -149,13 +151,14 @@ not the agent's fault, counted as not passed and reported apart). The run direct
 agent's diff; it is inside `.git`, so it is never an untracked file. `latest` is the run directory with the greatest
 name. See "Agents" for what each agent is started with.
 
-`report` prints a run as Markdown (for a pull request comment or the job summary) or as JSON: the pass rate, cost
-and tokens as the agent reported them, one row per task with each trial's outcome and, against a baseline, its change
+`report` prints a run as Markdown (for a pull request comment or the job summary) or as JSON: the pass rate, cost and
+tokens as the agent reported them, one row per task with each trial's outcome and, against a baseline, its change
 (`regressed`, `worse`, `fixed`, `better`, `same`, `new`, `missing`), and every trial that did not pass with its reason
 and logs. `baseline --write` keeps a run's per-task results (passed out of trials) as `evals/baseline.json`, to
-commit. `gate` exits 1 when the pass rate is more than `--max-drop` points below the baseline's, when a task that
-passed every trial in the baseline now passes none (unless `--allow-regressions`), or when a baseline task did not
-run.
+commit; `--baseline` also takes a run directory, whose results are then the baseline. `ab` is two runs and a report:
+see "Does memory help?". `gate` exits 1 when the pass rate is more than `--max-drop` points below the baseline's, when
+a task that passed every trial in the baseline now passes none (unless `--allow-regressions`), or when a baseline task
+did not run.
 
 Exit codes of every `eval` command: 0 done (all trials passed, the gate passed), 1 some trial did not pass or the gate
 failed, 2 usage error, 3 the command could not be done (a file, `git`, the agent would not start).
@@ -184,7 +187,12 @@ Each agent runs in the trial's worktree with the prompt; its output goes to `age
 The agent, setup and check commands start without the variables that would tie them to the session running the
 evaluation: memprove's `MEMPROVE_CLIENT_SESSION`, `MEMPROVE_AGENT_NAME`, `MEMPROVE_AGENT_ROLE`,
 `MEMPROVE_PARENT_SESSION` (and their `CONTINUITY_` forms), Claude Code's session variables (`CLAUDECODE`,
-`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_REMOTE_SESSION_ID` and the like) and Codex's `CODEX_THREAD_ID`.
+`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_REMOTE_SESSION_ID` and the like) and Codex's `CODEX_THREAD_ID`. The agent's
+`MEMPROVE_CONFIG_DIR` is an empty directory of the run (`agent-config/`), so a memprove command, hook or MCP server
+that finds its installation through that variable finds none. One given `--config-dir` (as `memprove init` writes
+the hook into `.claude/settings.local.json`) still finds the installation, but a trial's worktree is not a Workspace
+with a memprove context, so the hook injects no Pack there and a command cannot record to a Session; the agent gets
+no Pack but the one `--memory pack` gives.
 
 ## CI
 
@@ -215,8 +223,32 @@ trial fails, the report lists those memprove no longer judges verified: a fact t
 statement whose Evidence is `stale` or `tampered`. When memprove's statements cannot be read (no daemon, no Task in
 progress), the run goes on, `run.json` keeps the reason as `memory_unread`, and a report with failures says so.
 
-v0 does not give these statements to the agent: a trial worktree has no memprove context of its own, so the agent
+By default the agent does not get these statements: a trial worktree has no memprove context of its own, so the agent
 starts without a Pack.
+
+### Does memory help?
+
+`--memory pack` gives every trial's agent the Context Pack memprove would inject into a new session in the
+repository now: the SessionStart hook's rules for choosing the Task and its budget, read once when the run starts
+(read only: `getTaskCapsule` and `listTasks`). The agent's prompt is a short note (this is memprove's Context Pack for
+the repository, read-only here, do not run memprove commands), the Pack in a `text` block, then `Task:` and the
+task's own prompt; every agent gets it this way, not through its own hook. The run directory keeps the Pack as
+`pack.md`, and `run.json` records it as `memory_given` (`sha256`, `bytes`; `null` without it). When the Pack cannot be
+read, the run stops before any trial with exit code 3 and says why. `--memory pack` and `--no-memory` cannot be used
+together.
+
+`eval ab` answers "does this repository's memory make the agent better at its own tasks?" in one command:
+
+```bash
+memprove eval ab evals/ --agent claude-code --trials 3
+```
+
+It reads memprove's memory once, runs the tasks without memory, runs them again with that Pack, and prints the report
+of the second run against the first as its baseline: the pass rate without and with the Pack, and each task's change
+(`fixed` is a task that passed no trial without memory and every trial with it, `regressed` the reverse). Each run has
+its own directory, so `eval report <with> --baseline <without>` prints the comparison again. It costs two runs. A task
+that measures memory needs something only memory says: a fact recorded earlier that the prompt leaves out, like a
+port, a name, or a decision. Trials of a real agent vary; use `--trials` so that one lucky trial is not the result.
 
 ## Limits of v0
 
@@ -224,7 +256,8 @@ starts without a Pack.
   non-interactive CLI yet.
 - Cost and tokens are what the agent reports about itself; there is no price table. An agent killed at its limit
   reports nothing, so a run's cost leaves out its timed-out trials.
-- The agent gets no memprove Pack in its trial worktree (see "Memory").
+- The agent gets memprove's Pack only with `--memory pack`, as text ahead of its prompt, read once when the run
+  starts; it reads no other memory and records none during a trial (see "Does memory help?").
 - The agent's worktree shares the repository's object store, so an agent that looks can find later commits,
   including the commit a mined task was made from. Tasks measure an agent setup against itself over time; they are
   not a sealed benchmark.

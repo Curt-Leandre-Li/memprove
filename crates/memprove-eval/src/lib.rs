@@ -43,9 +43,9 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 pub use agent::{Agent, AgentRequest, agent_for};
 pub use baseline::{Baseline, BaselineTask};
 pub use error::EvalError;
-pub use memory::MemoryProbe;
+pub use memory::{Memory, MemoryProbe};
 pub use model::{
     AgentEnd, AgentKind, AgentOutcome, AgentSpec, BASELINE_SCHEMA, CommandSpec, DiffStat,
-    MemoryNote, Outcome, RUN_SCHEMA, RepositoryInfo, RunRecord, Summary, TASK_SCHEMA, Task,
-    TaskRef, TrialResult, Usage,
+    MemoryNote, Outcome, PackGiven, RUN_SCHEMA, RepositoryInfo, RunRecord, Summary, TASK_SCHEMA,
+    Task, TaskRef, TrialResult, Usage,
 };

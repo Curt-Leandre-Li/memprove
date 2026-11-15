@@ -169,6 +169,7 @@ fn options(root: &Path, out: &Path, trials: u32, jobs: u32) -> RunOptions {
         out_root: out.to_path_buf(),
         keep_worktrees: false,
         progress: false,
+        give_pack: false,
     }
 }
 

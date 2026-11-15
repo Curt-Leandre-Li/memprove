@@ -68,6 +68,7 @@ impl Trial {
             prompt,
             timeout,
             log_dir: &self.log,
+            env: &[],
         })
     }
 
