@@ -15,8 +15,9 @@ use crate::{
     git::{git, git_with_env},
 };
 
-/// The message of an isolated working copy's one commit.
-pub const START_MESSAGE: &str = "the files of the task's base commit";
+/// The subject of an isolated working copy's one commit, ahead of the
+/// base commit's name: `git log` there says whose files it holds.
+pub const START_SUBJECT: &str = "the files of commit";
 
 /// A working copy of a repository at a commit, removed by
 /// [`Worktree::remove`].
@@ -118,7 +119,7 @@ impl Worktree {
                 "--no-verify",
                 "--allow-empty",
                 "-m",
-                START_MESSAGE,
+                &format!("{START_SUBJECT} {commit}"),
             ],
         )?;
         let start = crate::git::commit(&path, "HEAD")?;
@@ -381,7 +382,10 @@ mod tests {
         let own = |args: &[&str]| git(&path, args).expect("git");
         assert_eq!(own(&["rev-parse", "--git-common-dir"]).trim(), ".git");
         assert_eq!(own(&["rev-list", "--all"]).lines().count(), 1);
-        assert_eq!(own(&["log", "--format=%s"]).trim(), START_MESSAGE);
+        assert_eq!(
+            own(&["log", "--format=%s"]).trim(),
+            format!("{START_SUBJECT} {base}")
+        );
         assert_eq!(
             own(&["for-each-ref", "--format=%(refname)"]).trim(),
             "refs/heads/main"

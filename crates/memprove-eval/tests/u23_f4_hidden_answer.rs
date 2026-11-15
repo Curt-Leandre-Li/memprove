@@ -15,7 +15,7 @@ use memprove_eval::{
     git::git,
     runner::{self, RunOptions},
     task,
-    workspace::START_MESSAGE,
+    workspace::START_SUBJECT,
 };
 
 /// The check patch: a test that wants 42 in answer.txt.
@@ -116,7 +116,11 @@ fn u23_f4_the_agent_finds_no_task_file_check_patch_or_later_commit() {
     assert!(!seen.contains("the later fix"), "{seen}");
     assert!(!seen.lines().any(|line| line.trim() == "fix"), "{seen}");
     assert!(!seen.contains("FOUND-"), "{seen}");
-    assert!(seen.contains(START_MESSAGE), "{seen}");
+    // Its one commit names the commit whose files it holds.
+    assert!(
+        seen.contains(&format!("{START_SUBJECT} {}\n", head.trim())),
+        "{seen}"
+    );
     assert!(seen.contains("commits: 1\n"), "{seen}");
     assert!(seen.contains("git dir: .git\n"), "{seen}");
 

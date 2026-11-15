@@ -195,13 +195,13 @@ Pack but the one `--memory pack` gives.
 
 ## What the agent sees
 
-A trial's working copy is a new Git repository under the system's temporary directory with one commit on `main`: the
-files of the task's base commit, without the task file and check patch of any task in the run (a directory they leave
-empty goes too). It has no history, no other branch or tag, and no link back to the repository under evaluation, so
-neither its files nor `git log --all`, `git show` or `git branch --all` show a check, a task file, or a later commit
-such as the one a mined task was made from. The trial's `base` in `run.json` is still the task's base commit, and
-`agent.diff` is the agent's change against the working copy's one commit. The repository under evaluation is read and
-not changed: its index, worktrees and refs stay as they were.
+A trial's working copy is a new Git repository under the system's temporary directory with one commit on `main`, whose
+subject is `the files of commit <base>`: the files of the task's base commit, without the task file and check patch of
+any task in the run (a directory they leave empty goes too). It has no history, no other branch or tag, and no link
+back to the repository under evaluation, so neither its files nor `git log --all`, `git show` or `git branch --all`
+show a check, a task file, or a later commit such as the one a mined task was made from. The trial's `base` in
+`run.json` is still the task's base commit, and `agent.diff` is the agent's change against the working copy's one
+commit. The repository under evaluation is read and not changed: its index, worktrees and refs stay as they were.
 
 Without history, `git log` and `git blame` show nothing older than the trial, and a setup or check that needs history
 or tags (`git describe`) does not work there. This hides the answer from a look at the working copy and its
@@ -241,14 +241,14 @@ starts without a Pack.
 
 ### Does memory help?
 
-`--memory pack` gives every trial's agent the Context Pack memprove would inject into a new session in the
-repository now: the SessionStart hook's rules for choosing the Task and its budget, read once when the run starts
-(read only: `getTaskCapsule` and `listTasks`). The agent's prompt is a short note (this is memprove's Context Pack for
-the repository, read-only here, do not run memprove commands), the Pack in a `text` block, then `Task:` and the
-task's own prompt; every agent gets it this way, not through its own hook. The run directory keeps the Pack as
-`pack.md`, and `run.json` records it as `memory_given` (`sha256`, `bytes`; `null` without it). When the Pack cannot be
-read, the run stops before any trial with exit code 3 and says why. `--memory pack` and `--no-memory` cannot be used
-together.
+`--memory pack` gives every trial's agent the Context Pack memprove would inject into a new session in the repository
+now: the SessionStart hook's rules for choosing the Task and its budget, read once when the run starts (read only:
+`getTaskCapsule` and `listTasks`). The agent's prompt is a short note (this is memprove's Context Pack for the
+repository, read-only here, do not run memprove commands; the commits it names are not in the working copy, which
+holds the files of the base commit as one new commit), the Pack in a `text` block, then `Task:` and the task's own
+prompt; every agent gets it this way, not through its own hook. The run directory keeps the Pack as `pack.md`, and
+`run.json` records it as `memory_given` (`sha256`, `bytes`; `null` without it). When the Pack cannot be read, the run
+stops before any trial with exit code 3 and says why. `--memory pack` and `--no-memory` cannot be used together.
 
 `eval ab` answers "does this repository's memory make the agent better at its own tasks?" in one command:
 
