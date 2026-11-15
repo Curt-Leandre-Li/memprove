@@ -16,7 +16,9 @@ pub struct Memory {
     /// The Pack's statements, in its order, each with its verdict.
     pub notes: Vec<MemoryNote>,
     /// The Context Pack's text, as the `SessionStart` hook would inject it
-    /// into a new session (without the hook's opening sentence).
+    /// into a new session, without the hook's opening sentence and (U23-F4-3)
+    /// without what it says a reader can do with memprove (the takeover
+    /// hint, the `Can:` lines): the agent is told not to run memprove.
     pub pack: String,
 }
 
