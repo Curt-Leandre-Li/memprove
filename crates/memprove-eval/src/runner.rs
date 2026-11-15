@@ -66,10 +66,11 @@ pub const AGENT_CONFIG_DIR: &str = "agent-config";
 pub const PACK_FILE: &str = "pack.md";
 
 /// What the agent reads before the task's prompt when it is given the
-/// Pack (`{pack}` is the Pack's text).
+/// Pack (`{pack}` is the Pack's text, `{base}` the trial's base commit).
 pub const PACK_PREAMBLE: &str = "memprove, the memory of this repository's earlier sessions, \
 gives you its Context Pack below, as it would at the start of a session. Use it as background \
-for the task. It is read-only here: do not run memprove commands.
+for the task. It is read-only here: do not run memprove commands. The commits it names are \
+not in your working copy, which holds the files of commit {base} as one new commit.
 
 ```text
 {pack}```
@@ -153,8 +154,8 @@ struct Context<'a> {
     /// The run's task files and check patches, relative to the repository
     /// root: left out of every trial's working copy.
     hidden: Vec<PathBuf>,
-    /// What goes ahead of every prompt: the framed Pack, or nothing.
-    preamble: String,
+    /// The Pack given to every agent, or `None`.
+    pack: Option<String>,
     /// The agent's added variables.
     agent_env: Vec<(String, String)>,
 }
@@ -202,7 +203,7 @@ pub fn run_suite(
     };
     let agent_config = run_dir.join(AGENT_CONFIG_DIR);
     create_private_dir(&agent_config)?;
-    let (preamble, memory_given) = match pack.filter(|_| options.give_pack) {
+    let (pack, memory_given) = match pack.filter(|_| options.give_pack) {
         Some(pack) => {
             let path = run_dir.join(PACK_FILE);
             fs::write(&path, &pack).map_err(|error| EvalError::io(&path, error))?;
@@ -210,9 +211,9 @@ pub fn run_suite(
                 sha256: crate::hex(&Sha256::digest(pack.as_bytes())),
                 bytes: u64::try_from(pack.len()).unwrap_or(u64::MAX),
             };
-            (PACK_PREAMBLE.replace("{pack}", &pack), Some(given))
+            (Some(pack), Some(given))
         }
-        None => (String::new(), None),
+        None => (None, None),
     };
     let worktrees = std::env::temp_dir().join(format!("memprove-eval-{run_id}"));
     let jobs: Vec<Job<'_>> = tasks
@@ -235,7 +236,7 @@ pub fn run_suite(
         run_dir: &run_dir,
         worktrees: &worktrees,
         hidden: hidden_paths(tasks),
-        preamble,
+        pack,
         agent_env: vec![(
             AGENT_CONFIG_ENV.to_owned(),
             agent_config.to_string_lossy().into_owned(),
@@ -267,6 +268,15 @@ pub fn run_suite(
     let path = run_dir.join("run.json");
     fs::write(&path, record.to_json()).map_err(|error| EvalError::io(&path, error))?;
     Ok((record, run_dir))
+}
+
+/// What goes ahead of the prompt of an agent given `pack` in a working copy
+/// of `base`: [`PACK_PREAMBLE`] with both filled in.
+#[must_use]
+pub fn pack_preamble(pack: &str, base: &str) -> String {
+    PACK_PREAMBLE
+        .replace("{base}", base)
+        .replace("{pack}", pack)
 }
 
 /// The run's task files and check patches, relative to the repository
@@ -422,7 +432,10 @@ fn in_worktree(
             }
         }
     }
-    let prompt = format!("{}{}", context.preamble, task.prompt);
+    let prompt = match &context.pack {
+        Some(pack) => format!("{}{}", pack_preamble(pack, &result.base), task.prompt),
+        None => task.prompt.clone(),
+    };
     let outcome = context.agent.run(&AgentRequest {
         workdir: tree.path(),
         prompt: &prompt,

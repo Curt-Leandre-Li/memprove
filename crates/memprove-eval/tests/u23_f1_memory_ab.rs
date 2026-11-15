@@ -14,7 +14,7 @@ use memprove_eval::{
     agent::agent_for,
     git::git,
     report::{Format, render},
-    runner::{self, AGENT_CONFIG_DIR, PACK_FILE, PACK_PREAMBLE, RunOptions},
+    runner::{self, AGENT_CONFIG_DIR, PACK_FILE, RunOptions, pack_preamble},
     task,
 };
 use sha2::{Digest as _, Sha256};
@@ -124,11 +124,18 @@ fn u23_f1_the_pack_fixes_a_task_only_memory_can_pass() {
     assert_eq!(with.results[0].outcome, Outcome::Passed);
 
     // Without memory the agent reads the task's prompt alone; with the
-    // Pack, the framed Pack and then the prompt.
+    // Pack, the framed Pack, which says which commit's files the working
+    // copy holds, and then the prompt.
+    let base = git(root, &["rev-parse", "HEAD"]).expect("head");
+    assert_eq!(with.results[0].base, base.trim());
     assert_eq!(trial_file(&without_dir, &without, "prompt.md"), PROMPT);
     assert_eq!(
         trial_file(&with_dir, &with, "prompt.md"),
-        format!("{}{PROMPT}", PACK_PREAMBLE.replace("{pack}", PACK))
+        format!("{}{PROMPT}", pack_preamble(PACK, base.trim()))
+    );
+    assert!(
+        trial_file(&with_dir, &with, "prompt.md")
+            .contains(&format!("holds the files of commit {}", base.trim()))
     );
     assert!(trial_file(&with_dir, &with, "prompt.md").contains("```text\nTask #3"));
 
