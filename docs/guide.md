@@ -607,7 +607,9 @@ optional check patch (tests applied after the agent, so it never sees them); `me
 the agent in its own Git worktree and judges it by the check's exit code alone. `memprove eval init` writes a first
 task, a CI workflow and a short note for agents; `memprove eval mine` turns commits that changed tests and code into
 tasks. Record a run as test Evidence with `memprove run --test-format cargo -- memprove eval run evals/`: its last
-line counts one case per trial. `memprove eval --help` lists the commands; `docs/eval.md` is the manual.
+line counts one case per trial. `memprove eval ab` runs the tasks without memory and then with the Context Pack this
+repository's memprove would give a new session, and reports the change in pass rate task by task; `--memory pack`
+gives a single run that Pack. `memprove eval --help` lists the commands; `docs/eval.md` is the manual.
 
 ## Known limits
 
@@ -616,6 +618,6 @@ line counts one case per trial. `memprove eval --help` lists the commands; `docs
 - A fact's verdict compares the repository state the daemon can observe: tracked files, the index, HEAD and the
   branch. Ignored files, environment variables and permission bits other than the executable bit are not part of the
   state.
-- `memprove eval` gives the agent no Pack: a trial worktree has no memprove context of its own. `run.json` records
-  what memprove held for the repository when the run started, and a report lists those statements memprove no
-  longer judges verified when a trial did not pass.
+- `memprove eval` gives the agent a Pack only with `--memory pack` (or in the second run of `eval ab`): a trial
+  worktree has no memprove context of its own, and the agent's `MEMPROVE_CONFIG_DIR` is an empty directory. The
+  Pack is read once when the run starts and is given as text ahead of the prompt, not through the agent's own hook.

@@ -231,7 +231,7 @@ fn the_gate_on_a_run_of_no_trials_names_every_baseline_task() {
 
 const SAMPLE_MARKDOWN: &str = "## memprove eval
 
-**1/2 trials passed (50.0%)** · run `20261114T221323Z-a1b2c3` · agent claude-code, model claude-sonnet-5-5 · HEAD `0123456` · cost $0.41 · tokens 2,400 in / 680 out · agent time 2m 02s
+**1/2 trials passed (50.0%)** · run `20261114T221323Z-a1b2c3` · agent claude-code, model claude-sonnet-5-5, no memory · HEAD `0123456` · cost $0.41 · tokens 2,400 in / 680 out · agent time 2m 02s
 
 | Task | This run | Agent time | Cost | Diff |
 |---|---|---|---|---|
@@ -302,7 +302,7 @@ fn markdown_of_a_run_of_no_trials() {
     let text = render(&run, None, Format::Markdown);
     assert!(text.contains(
         "**0/0 trials passed (n/a)** · run `20261114T221323Z-a1b2c3` · agent claude-code, \
-         default model · HEAD `0123456` · cost n/a · tokens 0 in / 0 out · agent time 0.0s\n"
+         default model, no memory · HEAD `0123456` · cost n/a · tokens 0 in / 0 out · agent time 0.0s\n"
     ));
     assert!(text.ends_with("\nNo tasks ran.\n"));
     assert!(!text.contains("Trials that did not pass"));
@@ -508,4 +508,41 @@ fn the_reason_memory_was_not_read_is_shown_with_failures() {
         value.get("memory_unread").and_then(|value| value.as_str()),
         Some("no memprove context for /work/repo")
     );
+}
+
+#[test]
+fn a_run_that_gave_the_pack_says_so() {
+    let mut run = run_of(&[("a", &[Passed])]);
+    run.memory_given = Some(crate::PackGiven {
+        sha256: "0123456789abcdef".repeat(4),
+        bytes: 900,
+    });
+    assert!(
+        render(&run, None, Format::Markdown)
+            .contains("model claude-sonnet-5-5, memprove's Pack `0123456` · HEAD")
+    );
+    let value = parse(&render(&run, None, Format::Json), None).expect("strict JSON");
+    assert_eq!(
+        value
+            .get("memory_given")
+            .and_then(|given| given.get("bytes"))
+            .and_then(JsonValue::as_i64),
+        Some(900)
+    );
+}
+
+#[test]
+fn the_memory_section_says_whether_the_agent_got_the_statements() {
+    let mut run = sample_run();
+    assert!(render(&run, None, Format::Markdown).contains("The agent did not get them"));
+    run.memory_given = Some(crate::PackGiven {
+        sha256: "f".repeat(64),
+        bytes: 10,
+    });
+    let text = render(&run, None, Format::Markdown);
+    assert!(
+        text.contains("The agent got them in memprove's Pack, as a new session would."),
+        "{text}"
+    );
+    assert!(!text.contains("did not get them"));
 }

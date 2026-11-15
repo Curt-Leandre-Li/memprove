@@ -224,11 +224,12 @@ Session-start hook (Claude Code):
   hook uninstall removes that entry again; every other value stays, not the file's bytes
 
 Agent evaluation (memprove eval --help):
-  eval init | mine | run | report | baseline | gate
+  eval init | mine | run | ab | report | baseline | gate
                  gives a coding agent (Claude Code, Codex, or any program) this
                  repository's own tasks, each in a Git worktree of its own, and
                  judges each by its check command's exit code alone; compares
-                 runs with a committed baseline and fails CI below it
+                 runs with a committed baseline and fails CI below it; `ab`
+                 compares the agent without memory and with memprove's Pack
 
 Install and maintenance:
   init [--client <claude-code|codex|cursor>]... [--operator-token <FILE>] [--allow-tools] [--dry-run]

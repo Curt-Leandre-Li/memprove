@@ -39,6 +39,9 @@ pub struct AgentRequest<'a> {
     /// The trial's directory: the adapter writes `agent.out` and
     /// `agent.err` (and may write more files) here.
     pub log_dir: &'a Path,
+    /// Variables set in the agent's environment, after [`REMOVED_ENV`] is
+    /// taken out and before the adapter's own.
+    pub env: &'a [(String, String)],
 }
 
 /// An agent that can run tasks; one value runs every trial of a run,
@@ -253,10 +256,11 @@ struct Launch<'a> {
 fn launch(request: &AgentRequest<'_>, what: &Launch<'_>) -> (AgentEnd, u64) {
     let started = Instant::now();
     let removed: Vec<String> = REMOVED_ENV.iter().map(|name| (*name).to_owned()).collect();
+    let env: Vec<(String, String)> = request.env.iter().chain(&what.env).cloned().collect();
     let invocation = Invocation {
         argv: &what.argv,
         cwd: request.workdir,
-        env: &what.env,
+        env: &env,
         env_remove: &removed,
         stdout: request.log_dir.join(STDOUT_FILE),
         stderr: request.log_dir.join(STDERR_FILE),
@@ -424,6 +428,7 @@ mod tests {
             prompt: "p",
             timeout: Duration::from_secs(5),
             log_dir: dir.path(),
+            env: &[],
         };
         let (end, _) = launch(
             &request,

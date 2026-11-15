@@ -30,10 +30,15 @@ pub(super) fn render(comparison: &Comparison<'_>) -> String {
     }
     let memory = comparison.listed_memory();
     if !memory.is_empty() {
-        text.push_str(
+        let given = if comparison.run.memory_given.is_some() {
+            "The agent got them in memprove's Pack, as a new session would."
+        } else {
+            "The agent did not get them: a trial worktree has no memprove context."
+        };
+        let _ = write!(
+            text,
             "\n### Statements memprove held that it no longer judges verified\n\n\
-             Read from memprove when the run started. The agent did not get them: a trial \
-             worktree has no memprove context.\n\n\
+             Read from memprove when the run started. {given}\n\n\
              | Statement | Kind | Verdict | Text | Commit |\n|---|---|---|---|---|\n",
         );
         for note in memory {
@@ -65,9 +70,13 @@ fn overview(comparison: &Comparison<'_>) -> String {
     let cost = summary
         .cost_microusd
         .map_or_else(|| "n/a".to_owned(), dollars);
+    let memory = run.memory_given.as_ref().map_or_else(
+        || "no memory".to_owned(),
+        |given| format!("memprove's Pack {}", code(short(&given.sha256))),
+    );
     format!(
-        "**{}/{} trials passed ({rate})**{errors} · run {} · agent {}, {model} · HEAD {} · \
-         cost {cost} · tokens {} in / {} out · agent time {}",
+        "**{}/{} trials passed ({rate})**{errors} · run {} · agent {}, {model}, {memory} · \
+         HEAD {} · cost {cost} · tokens {} in / {} out · agent time {}",
         summary.passed,
         summary.trials,
         code(&run.run_id),

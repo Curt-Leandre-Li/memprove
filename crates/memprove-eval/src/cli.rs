@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    AgentKind, AgentSpec, Baseline, EvalError, MemoryProbe, agent_for, git,
+    AgentKind, AgentSpec, Baseline, EvalError, Memory, MemoryProbe, RunRecord, agent_for, git,
     init::{self, InitSpec},
     mine::{self, MineSpec, MineStatus},
     report::{self, Format, GatePolicy},
@@ -44,10 +44,12 @@ Usage:
   memprove eval mine     [--limit <N>] [--range <GIT_RANGE>] [--out <DIR>] [--verify] [--dry-run]
   memprove eval run      [<TASK_FILE | DIR>...] [--agent claude-code|codex|command] [--model <MODEL>]
                          [--agent-arg <ARG>]... [--trials <N>] [--jobs <N>] [--out-root <DIR>]
-                         [--keep-worktrees] [--no-memory] [-- <PROGRAM> [<ARG>...]]
-  memprove eval report   [<RUN_DIR> | latest] [--baseline <FILE>] [--format markdown|json]
+                         [--keep-worktrees] [--memory none|pack] [--no-memory]
+                         [-- <PROGRAM> [<ARG>...]]
+  memprove eval ab       [<TASK_FILE | DIR>...] [the options of run but --memory, --no-memory]
+  memprove eval report   [<RUN_DIR> | latest] [--baseline <FILE | RUN_DIR>] [--format markdown|json]
   memprove eval baseline [<RUN_DIR> | latest] [--write <FILE>]
-  memprove eval gate     [<RUN_DIR> | latest] [--baseline <FILE>] [--max-drop <POINTS>]
+  memprove eval gate     [<RUN_DIR> | latest] [--baseline <FILE | RUN_DIR>] [--max-drop <POINTS>]
                          [--allow-regressions]
 
 A task file (evals/<id>.json, schema memprove.eval.task.v1) names a base commit, a
@@ -56,6 +58,8 @@ after the agent, so it never sees them. `run` gives every task to the agent in i
 Git worktree at the base commit, then runs the check there; exit code 0 is `passed`,
 and nothing else judges. The run is written to run.json under
 <git common dir>/memprove-eval/runs/<run id>/, with every log and the agent's diff.
+`ab` runs the tasks twice, without memory and with memprove's Context Pack, and
+compares the two.
 
 `memprove eval <command> --help` describes one command.
 
@@ -118,7 +122,8 @@ const HELP: &[Help] = &[
         summary: "run the tasks with an agent and judge each by its check",
         usage: "memprove eval run [<TASK_FILE | DIR>...] [--agent claude-code|codex|command] [--model <MODEL>]\n\
                 \x20                 [--agent-arg <ARG>]... [--trials <N>] [--jobs <N>] [--out-root <DIR>]\n\
-                \x20                 [--keep-worktrees] [--no-memory] [-- <PROGRAM> [<ARG>...]]",
+                \x20                 [--keep-worktrees] [--memory none|pack] [--no-memory]\n\
+                \x20                 [-- <PROGRAM> [<ARG>...]]",
         options: &[
             (
                 "<TASK_FILE | DIR>",
@@ -150,9 +155,10 @@ const HELP: &[Help] = &[
                 "keep each trial's worktree (under the system's temporary directory)",
             ),
             (
-                "--no-memory",
-                "do not read the memory memprove would give the agent",
+                "--memory <MODE>",
+                "none (default): the agent gets no memory, run.json records memprove's statements; pack: every trial's agent gets the Context Pack memprove would inject into a new session, ahead of the prompt",
             ),
+            ("--no-memory", "do not read memprove's memory at all"),
             (
                 "-- <PROGRAM> [<ARG>...]",
                 "the command agent: {prompt_file} and {workdir} in its arguments are replaced",
@@ -161,20 +167,35 @@ const HELP: &[Help] = &[
         notes: "The agent runs without asking for permissions, in a worktree of its own; run it\n\
                 where that is acceptable, such as CI. The last line is in the format of cargo\n\
                 test's summary, one case per trial, so `memprove run --test-format cargo --\n\
-                memprove eval run` records the run as test Evidence.",
+                memprove eval run` records the run as test Evidence. The agent's\n\
+                MEMPROVE_CONFIG_DIR is an empty directory, and its worktree has no memprove\n\
+                context, so it gets no Pack but the one --memory pack gives.",
+    },
+    Help {
+        name: "ab",
+        summary: "run the tasks without memory and with memprove's Pack, and compare",
+        usage: "memprove eval ab [<TASK_FILE | DIR>...] [--agent claude-code|codex|command] [--model <MODEL>]\n\
+                \x20                [--agent-arg <ARG>]... [--trials <N>] [--jobs <N>] [--out-root <DIR>]\n\
+                \x20                [--keep-worktrees] [-- <PROGRAM> [<ARG>...]]",
+        options: &[("<TASK_FILE | DIR> and the rest", "as for run")],
+        notes: "memprove's memory is read once, before any trial; when it cannot be read, nothing\n\
+                runs. The first run gives the agent no memory, the second gives every trial that\n\
+                Context Pack (as run --memory pack); both record the same statements, and the\n\
+                report compares the second with the first. It costs two runs. Exit status 0 means\n\
+                both runs were done, whatever they passed.",
     },
     Help {
         name: "report",
         summary: "print a run's report, compared with a baseline",
-        usage: "memprove eval report [<RUN_DIR> | latest] [--baseline <FILE>] [--format markdown|json]",
+        usage: "memprove eval report [<RUN_DIR> | latest] [--baseline <FILE | RUN_DIR>] [--format markdown|json]",
         options: &[
             (
                 "<RUN_DIR> | latest",
                 "the run directory; default the latest run",
             ),
             (
-                "--baseline <FILE>",
-                "the baseline to compare with; default evals/baseline.json when it exists",
+                "--baseline <FILE | RUN_DIR>",
+                "the baseline to compare with, or a run directory to compare with as one; default evals/baseline.json when it exists",
             ),
             ("--format <FORMAT>", "markdown (default) or json"),
         ],
@@ -199,15 +220,15 @@ const HELP: &[Help] = &[
     Help {
         name: "gate",
         summary: "fail when a run falls below the baseline",
-        usage: "memprove eval gate [<RUN_DIR> | latest] [--baseline <FILE>] [--max-drop <POINTS>] [--allow-regressions]",
+        usage: "memprove eval gate [<RUN_DIR> | latest] [--baseline <FILE | RUN_DIR>] [--max-drop <POINTS>] [--allow-regressions]",
         options: &[
             (
                 "<RUN_DIR> | latest",
                 "the run directory; default the latest run",
             ),
             (
-                "--baseline <FILE>",
-                "the baseline; default evals/baseline.json",
+                "--baseline <FILE | RUN_DIR>",
+                "the baseline, or a run directory; default evals/baseline.json",
             ),
             (
                 "--max-drop <POINTS>",
@@ -422,6 +443,7 @@ fn dispatch(name: &str, args: &Args, memory: Option<&dyn MemoryProbe>) -> Result
         "init" => init_command(args, &cwd),
         "mine" => mine_command(args, &cwd),
         "run" => run_command(args, &cwd, memory),
+        "ab" => ab_command(args, &cwd, memory),
         "report" => report_command(args, &cwd),
         "baseline" => baseline_command(args, &cwd),
         "gate" => gate_command(args, &cwd),
@@ -504,20 +526,25 @@ fn mine_command(args: &Args, cwd: &Path) -> Result<u8, EvalError> {
     Ok(EXIT_OK)
 }
 
-fn run_command(args: &Args, cwd: &Path, memory: Option<&dyn MemoryProbe>) -> Result<u8, EvalError> {
-    args.allow(
-        &[
-            "--agent",
-            "--model",
-            "--agent-arg",
-            "--trials",
-            "--jobs",
-            "--out-root",
-        ],
-        &["--keep-worktrees", "--no-memory"],
-        usize::MAX,
-        true,
-    )?;
+/// What `run` and `ab` share: the suite, the agent and the run options,
+/// from the words of either command.
+struct Prepared {
+    tasks: Vec<(crate::Task, crate::TaskRef)>,
+    agent: Box<dyn crate::Agent>,
+    options: RunOptions,
+}
+
+/// The options `run` and `ab` both take.
+const RUN_OPTIONS: &[&str] = &[
+    "--agent",
+    "--model",
+    "--agent-arg",
+    "--trials",
+    "--jobs",
+    "--out-root",
+];
+
+fn prepare(args: &Args, cwd: &Path) -> Result<Prepared, EvalError> {
     let kind = agent_kind(
         args,
         &[AgentKind::ClaudeCode, AgentKind::Codex, AgentKind::Command],
@@ -561,23 +588,75 @@ fn run_command(args: &Args, cwd: &Path, memory: Option<&dyn MemoryProbe>) -> Res
         jobs: args.number("--jobs", 1..=16, 1)?,
         keep_worktrees: args.flag("--keep-worktrees"),
         progress: true,
+        give_pack: false,
     };
+    Ok(Prepared {
+        tasks,
+        agent,
+        options,
+    })
+}
+
+/// The lines `run` (and each arm of `ab`) prints for a finished run.
+fn finished(run: &RunRecord, run_dir: &Path) -> String {
+    let summary = run.summary();
+    let cost = summary
+        .cost_microusd
+        .map_or_else(|| "cost n/a".to_owned(), runner::dollars);
+    let memory = if run.memory_given.is_some() {
+        ", the agent given memprove's Pack"
+    } else {
+        ""
+    };
+    format!(
+        "run {}: {} of {} trials passed, {cost}{memory}\nrun directory: {}\n",
+        run.run_id,
+        summary.passed,
+        summary.trials,
+        run_dir.display(),
+    )
+}
+
+fn run_command(args: &Args, cwd: &Path, memory: Option<&dyn MemoryProbe>) -> Result<u8, EvalError> {
+    let options: Vec<&str> = RUN_OPTIONS.iter().copied().chain(["--memory"]).collect();
+    args.allow(
+        &options,
+        &["--keep-worktrees", "--no-memory"],
+        usize::MAX,
+        true,
+    )?;
+    let give_pack = match args.one("--memory")? {
+        None | Some("none") => false,
+        Some("pack") => true,
+        Some(other) => {
+            return Err(EvalError::Usage(format!(
+                "--memory must be none or pack, not {other:?}"
+            )));
+        }
+    };
+    if give_pack && args.flag("--no-memory") {
+        return Err(EvalError::Usage(
+            "--memory pack gives the agent memprove's memory, and --no-memory reads none"
+                .to_owned(),
+        ));
+    }
+    let mut prepared = prepare(args, cwd)?;
+    prepared.options.give_pack = give_pack;
     let memory = if args.flag("--no-memory") {
         None
     } else {
         memory
     };
-    let (run, run_dir) = runner::run_suite(&options, &tasks, agent.as_ref(), memory)?;
+    let (run, run_dir) = runner::run_suite(
+        &prepared.options,
+        &prepared.tasks,
+        prepared.agent.as_ref(),
+        memory,
+    )?;
     let summary = run.summary();
-    let cost = summary
-        .cost_microusd
-        .map_or_else(|| "cost n/a".to_owned(), runner::dollars);
     println!(
-        "run {}: {} of {} trials passed, {cost}\nrun directory: {}\n{}",
-        run.run_id,
-        summary.passed,
-        summary.trials,
-        run_dir.display(),
+        "{}{}",
+        finished(&run, &run_dir),
         runner::libtest_summary(&run)
     );
     Ok(if summary.passed == summary.trials {
@@ -585,6 +664,56 @@ fn run_command(args: &Args, cwd: &Path, memory: Option<&dyn MemoryProbe>) -> Res
     } else {
         EXIT_FAILED
     })
+}
+
+fn ab_command(args: &Args, cwd: &Path, memory: Option<&dyn MemoryProbe>) -> Result<u8, EvalError> {
+    args.allow(RUN_OPTIONS, &["--keep-worktrees"], usize::MAX, true)?;
+    let Some(memory) = memory else {
+        return Err(EvalError::invalid(
+            None,
+            "eval ab compares runs with and without memprove's memory, and this build reads none",
+        ));
+    };
+    let mut prepared = prepare(args, cwd)?;
+    // Read once, before any trial: both arms record the same statements,
+    // and the second gives the agent the Pack the first did not.
+    let read = memory.read(&prepared.options.repo_root).map_err(|reason| {
+        EvalError::invalid(
+            None,
+            format!("eval ab: memprove's memory was not read: {reason}"),
+        )
+    })?;
+    let memory = Fixed(read);
+    let without = runner::run_suite(
+        &prepared.options,
+        &prepared.tasks,
+        prepared.agent.as_ref(),
+        Some(&memory),
+    )?;
+    print!("without memory: {}", finished(&without.0, &without.1));
+    prepared.options.give_pack = true;
+    let with = runner::run_suite(
+        &prepared.options,
+        &prepared.tasks,
+        prepared.agent.as_ref(),
+        Some(&memory),
+    )?;
+    println!("with the Pack: {}", finished(&with.0, &with.1));
+    let baseline = Baseline::from_run(&without.0);
+    print!(
+        "{}",
+        report::render(&with.0, Some(&baseline), Format::Markdown)
+    );
+    Ok(EXIT_OK)
+}
+
+/// What a probe read once, given to every run that asks.
+struct Fixed(Memory);
+
+impl MemoryProbe for Fixed {
+    fn read(&self, _repo_root: &Path) -> Result<Memory, String> {
+        Ok(self.0.clone())
+    }
 }
 
 fn absolute(cwd: &Path, path: &str) -> PathBuf {
@@ -605,7 +734,12 @@ fn run_dir(args: &Args, cwd: &Path) -> Result<(PathBuf, PathBuf), EvalError> {
     Ok((root, dir))
 }
 
+/// The baseline file at `path`, or the pass counts of the run whose
+/// directory `path` is.
 fn read_baseline(path: &Path) -> Result<Baseline, EvalError> {
+    if path.is_dir() {
+        return runner::read_run(path).map(|run| Baseline::from_run(&run));
+    }
     let text = fs::read_to_string(path).map_err(|error| EvalError::io(path, error))?;
     Baseline::from_json(&text, Some(path))
 }
