@@ -3,7 +3,9 @@
 Each release, with its binaries, is on
 https://github.com/memprove/memprove/releases.
 
-## Unreleased
+## 0.2.1 · 2026-11-16
+
+A patch release: help text only, no change in behaviour.
 
 ### Fixed
 
