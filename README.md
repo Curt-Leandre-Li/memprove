@@ -138,6 +138,19 @@ fixed or broke. `memprove eval init` sets a repository up and
 `memprove eval mine` writes tasks from its history; `docs/eval.md` has
 the rest.
 
+## Verifying that work is done
+
+`memprove verify` checks an agent's "done": the repository's contract
+(`.memprove/verify.json`) names the commands that must exit 0 and the
+protected paths, its tests. `memprove verify run` runs the commands on a
+clean copy of the work (no ignored file, no build output), and exit
+codes alone judge. Work that passes only with its own changes to the
+protected paths, or that adds a skip marker, is left to a person; the
+contract is read from the base commit, so the work cannot weaken it.
+Every run writes a receipt. `memprove verify init --hook` adds Claude
+Code hooks that verify each time the agent finishes and keep it working
+while a check fails; `docs/verify.md` has the rest.
+
 ## Status
 
 memprove 0.2.1 came out on 2026-11-16

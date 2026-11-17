@@ -16,6 +16,23 @@ https://github.com/memprove/memprove/releases.
   Codex (`codex plugin marketplace add memprove/memprove`), and
   `.cursor-plugin/marketplace.json` lists it for Cursor. No change to the
   binaries.
+- `memprove verify` (crate `memprove-verify`): checks that work an agent
+  says is done is done. A contract (`.memprove/verify.json`, schema
+  `memprove.verify.contract.v1`) names the checks, commands that must
+  exit 0, and the protected paths. `verify run` writes the work (the
+  working tree without what Git ignores, or `--commit`) to a clean copy,
+  runs the checks there and judges by exit codes; when the work changes a
+  protected path it runs them again with those paths as at the base
+  commit. Verdicts: `pass` (exit 0), `fail` (1), `needs_human` (4: the
+  checks pass only with the work's own changes to protected paths, or
+  the work adds a skip marker). The contract is read from the base
+  commit. Every run writes a receipt (`memprove.verify.receipt.v1`)
+  under `<git common dir>/memprove-verify/runs/`. `verify init` writes
+  the contract and, with `--hook`, the Claude Code `SessionStart` and
+  `Stop` handlers; `verify hook` keeps an agent working while a check
+  fails, at most 3 times in a session. `verify show` prints a run again.
+  See `docs/verify.md`. The ledger format, the control API and the Pack
+  are unchanged.
 
 ## 0.2.1 · 2026-11-16
 
