@@ -231,6 +231,15 @@ Agent evaluation (memprove eval --help):
                  runs with a committed baseline and fails CI below it; `ab`
                  compares the agent without memory and with memprove's Pack
 
+Completion check (memprove verify --help):
+  verify init | run | show | hook
+                 runs the checks of this repository's contract
+                 (.memprove/verify.json) on a clean copy of the work and judges
+                 by their exit codes; work that passes only with its own changes
+                 to the protected paths (the tests) is left to a person; the
+                 contract is read from the base commit; `hook` is the Claude Code
+                 Stop hook that keeps an agent working while a check fails
+
 Install and maintenance:
   init [--client <claude-code|codex|cursor>]... [--operator-token <FILE>] [--allow-tools] [--dry-run]
                  enables memprove in this repository: registers the Project with
