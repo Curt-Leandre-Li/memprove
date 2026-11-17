@@ -3,6 +3,20 @@
 Each release, with its binaries, is on
 https://github.com/memprove/memprove/releases.
 
+## Unreleased
+
+### Added
+
+- The memprove plugin for coding agents (`plugins/memprove`), with one
+  skill, `memprove-setup`: asked to set memprove up, the agent installs it
+  when it is missing and runs `memprove init`, `memprove eval init`,
+  `memprove policy init` (when the release has it) and `memprove doctor`,
+  then reports what changed. This repository is its marketplace for Claude
+  Code (`/plugin install memprove --marketplace memprove/memprove`) and
+  Codex (`codex plugin marketplace add memprove/memprove`), and
+  `.cursor-plugin/marketplace.json` lists it for Cursor. No change to the
+  binaries.
+
 ## 0.2.1 · 2026-11-16
 
 A patch release: help text only, no change in behaviour.
