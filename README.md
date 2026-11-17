@@ -71,6 +71,13 @@ it.
    Running it again changes nothing. No token is shown or written into the
    repository.
 
+Or let your coding agent do both steps, and set up `memprove eval` and
+`memprove policy` too: add the memprove plugin
+(`/plugin install memprove --marketplace memprove/memprove` in Claude Code;
+`codex plugin marketplace add memprove/memprove`, then
+`codex plugin add memprove@memprove` in Codex) and say "Set up memprove in
+this repository." `plugins/memprove/README.md` has Cursor and other agents.
+
 ## One session, five commands
 
 ```bash

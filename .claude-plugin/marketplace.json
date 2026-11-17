@@ -1,0 +1,17 @@
+{
+  "name": "memprove",
+  "owner": {
+    "name": "memprove",
+    "url": "https://memprove.dev"
+  },
+  "description": "The memprove plugin: your coding agent installs memprove and sets it up in a repository.",
+  "plugins": [
+    {
+      "name": "memprove",
+      "source": "./plugins/memprove",
+      "description": "Lets your coding agent install memprove and set it up in a repository: memory bound to commits and test runs, agent evals, and tool rules.",
+      "category": "development",
+      "tags": ["memory", "evals", "policy"]
+    }
+  ]
+}

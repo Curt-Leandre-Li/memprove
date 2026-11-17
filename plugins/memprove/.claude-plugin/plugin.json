@@ -1,0 +1,13 @@
+{
+  "name": "memprove",
+  "displayName": "memprove",
+  "description": "Lets your coding agent install memprove and set it up in a repository: memory bound to commits and test runs, agent evals, and tool rules.",
+  "author": {
+    "name": "memprove",
+    "url": "https://memprove.dev"
+  },
+  "homepage": "https://memprove.dev/docs/",
+  "repository": "https://github.com/memprove/memprove",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "agent-memory", "evals", "agent-policy", "setup"]
+}
