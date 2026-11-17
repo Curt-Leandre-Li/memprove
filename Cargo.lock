@@ -589,6 +589,7 @@ dependencies = [
  "memprove-eval",
  "memprove-protocol",
  "memprove-store-sqlite",
+ "memprove-verify",
  "sha2",
  "tempfile",
 ]
@@ -677,6 +678,15 @@ dependencies = [
  "tempfile",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "memprove-verify"
+version = "0.2.1"
+dependencies = [
+ "memprove-eval",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

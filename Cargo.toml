@@ -9,6 +9,7 @@ members = [
     "crates/memprove-daemon",
     "crates/memprove-cli",
     "crates/memprove-eval",
+    "crates/memprove-verify",
     "crates/memprove-proxy",
 ]
 
